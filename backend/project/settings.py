@@ -154,7 +154,10 @@ CORS_ALLOW_ORIGINS = [
 
 #######################################################
 CELERY_BEAT_SCHEDULE = {
-    
+    "test-task": {
+        "task": "project.tasks.test_task",
+        "schedule": 60.0,  # 60초마다 실행 (테스트용)
+    },
 }
 
 
