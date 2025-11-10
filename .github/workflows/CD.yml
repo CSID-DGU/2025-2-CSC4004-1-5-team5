@@ -1,20 +1,19 @@
-name: Backend CD with Docker Compose (Django)
+name: CD with Docker Compose
 
 on:
   workflow_run:
-      workflows: ["CI with Docker"]
-      types: [completed]
-      branches: ["main", "dev"]
-
-  env:
-    IMAGE: ${{ secrets.DOCKER_USERNAME }}/soribom-be
-    PROJECT_DIR: /home/ubuntu/2025-2-CSC4004-1-5-TEAM5/backend
+    workflows: ["CI with Docker"]
+    types: [completed]
+    branches: ["main", "dev"]
 
 jobs:
   deploy:
     name: Deploy to EC2 Server
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    env:
+      IMAGE: ${{ secrets.DOCKER_USERNAME }}/soribom-be
+      PROJECT_DIR: /home/ubuntu/2025-2-CSC4004-1-5-TEAM5/backend
 
     steps:
       - name: Checkout repository
