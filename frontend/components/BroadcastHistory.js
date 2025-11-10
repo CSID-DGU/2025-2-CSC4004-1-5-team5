@@ -1,10 +1,13 @@
 // components/BroadcastHistory.js
 import { StyleSheet, Text, View } from 'react-native';
+import { useSettings } from '../context/SettingsContext';
 
 // ✅ 문자열 비교용: 대소문자 무시, 앞의 # 제거
 const norm = (s) => String(s || '').trim().replace(/^#/, '').toLowerCase();
 
 export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
+  const { theme } = useSettings();
+
   // 데모 데이터 (실서비스에서는 실제 이력으로 교체)
   const data = [
     {
@@ -40,35 +43,114 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
   const items = data.slice(0, maxCount);
 
   return (
-    <View style={styles.listWrap}>
+    <View
+      style={[
+        styles.listWrap,
+        {
+          backgroundColor: theme.colors.bg,
+          borderColor: theme.colors.line,
+        },
+      ]}
+    >
       <View style={styles.headerRow}>
-        <Text style={styles.headerTitle}>방송 이력</Text>
-        <Text style={styles.headerCount}>{`${items.length}/${data.length}건`}</Text>
+        <Text
+          style={{
+            fontSize: Math.round(14 * theme.scale),
+            fontWeight: theme.weight,
+            color: theme.colors.text,
+          }}
+        >
+          방송 이력
+        </Text>
+        <Text
+          style={{
+            fontSize: Math.round(12 * theme.scale),
+            color: theme.colors.sub,
+          }}
+        >
+          {`${items.length}/${data.length}건`}
+        </Text>
       </View>
 
       {items.map((it) => {
-        const matched = extractMatchedKeywords(it.text, keywords); // ← 핵심
+        const matched = extractMatchedKeywords(it.text, keywords);
         const hasMatch = matched.length > 0;
 
         return (
-          <View key={it.id} style={[styles.card, hasMatch && styles.cardAlert]}>
+          <View
+            key={it.id}
+            style={[
+              styles.card,
+              {
+                backgroundColor: hasMatch
+                  ? '#FFF8DB'
+                  : theme.colors.card,
+                borderColor: hasMatch
+                  ? '#FDE68A'
+                  : theme.colors.line,
+              },
+            ]}
+          >
+            {/* 시간 + 배지 */}
             <View style={styles.timeRow}>
-              <Text style={styles.time}>{it.time}</Text>
+              <Text
+                style={{
+                  fontSize: Math.round(12 * theme.scale),
+                  color: theme.colors.sub,
+                }}
+              >
+                {it.time}
+              </Text>
+
               {hasMatch && (
                 <View style={styles.badge}>
-                  <Text style={styles.badgeText}>알림</Text>
+                  <Text
+                    style={{
+                      fontSize: Math.round(12 * theme.scale),
+                      fontWeight: '800',
+                      color: '#8A6D00',
+                    }}
+                  >
+                    알림
+                  </Text>
                 </View>
               )}
             </View>
 
-            <Text style={styles.body}>{it.text}</Text>
+            {/* 본문 */}
+            <Text
+              style={{
+                fontSize: Math.round(14 * theme.scale),
+                lineHeight: Math.round(20 * theme.scale),
+                color: theme.colors.text,
+              }}
+            >
+              {it.text}
+            </Text>
 
-            {/* 키워드가 포함된 방송에만 키워드 칩 노출 */}
+            {/* 키워드 칩 */}
             {hasMatch && (
               <View style={styles.rowChips}>
                 {matched.map((k, i) => (
-                  <View key={`${it.id}-kw-${i}`} style={[styles.chip, styles.chipGreen]}>
-                    <Text style={[styles.chipText, styles.chipTextGreen]}>#{k}</Text>
+                  <View
+                    key={`${it.id}-kw-${i}`}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: '#ECFDF5',
+                        borderColor: '#A7F3D0',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: Math.round(12 * theme.scale),
+                        fontWeight: '700',
+                        color: '#047857',
+                      }}
+                    >
+                      #{k}
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -81,34 +163,42 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
 }
 
 const styles = StyleSheet.create({
-  listWrap: { backgroundColor: '#E8F0FF', borderRadius: 14, padding: 10, gap: 10 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
-  headerTitle: { fontSize: 14, fontWeight: '700', color: '#334155' },
-  headerCount: { fontSize: 12, color: '#64748b' },
-
+  listWrap: {
+    borderRadius: 14,
+    padding: 10,
+    gap: 10,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
   card: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 12,
     gap: 8,
     borderWidth: 1,
-    borderColor: '#eef2ff',
   },
-  cardAlert: { backgroundColor: '#FFF8DB', borderColor: '#FDE68A' },
-
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  time: { fontSize: 12, color: '#6b7280' },
-  badge: { backgroundColor: '#FACC15', paddingVertical: 2, paddingHorizontal: 8, borderRadius: 999 },
-  badgeText: { fontSize: 12, fontWeight: '800', color: '#8A6D00' },
-
-  body: { fontSize: 14, color: '#111827', lineHeight: 20 },
-
-  rowChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-
-  chip: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999, borderWidth: 1 },
-  chipText: { fontSize: 12, fontWeight: '700' },
-
-  // 키워드 칩 스타일(녹색만 사용)
-  chipGreen: { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
-  chipTextGreen: { color: '#047857' },
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  badge: {
+    backgroundColor: '#FACC15',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+  },
+  rowChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chip: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
 });

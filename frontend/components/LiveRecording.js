@@ -1,11 +1,19 @@
+// components/LiveRecording.js
 import { StyleSheet, Text, View, Pressable, Image } from 'react-native';
+import { useSettings } from '../context/SettingsContext';
 
 export default function LiveRecording({ recording, onToggle }) {
+  const { theme } = useSettings();
+
   return (
     <View style={styles.footer}>
       <Pressable
         onPress={onToggle}
-        style={[styles.button, recording ? styles.buttonStop : styles.buttonStart]}
+        style={[
+          styles.button,
+          recording ? styles.buttonStop : styles.buttonStart,
+          { shadowColor: theme.colors.text },
+        ]}
       >
         <Image
           source={
@@ -15,7 +23,13 @@ export default function LiveRecording({ recording, onToggle }) {
           }
           style={[styles.icon, recording && styles.iconActive]}
         />
-        <Text style={styles.buttonText}>
+        <Text
+          style={{
+            fontSize: Math.round(16 * theme.scale),
+            fontWeight: theme.weight,
+            color: '#fff',
+          }}
+        >
           {recording ? '분석 중지' : '실시간 분석 시작'}
         </Text>
       </Pressable>
@@ -39,7 +53,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
-    shadowColor: '#000',
     shadowOpacity: 0.12,
     shadowRadius: 10,
     elevation: 3,
@@ -54,10 +67,5 @@ const styles = StyleSheet.create({
   },
   iconActive: {
     opacity: 1,
-  },
-  buttonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '700',
   },
 });

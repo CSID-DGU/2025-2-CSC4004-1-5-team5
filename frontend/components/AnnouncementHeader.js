@@ -1,16 +1,43 @@
 import { StyleSheet, Text, View, Image, Pressable } from 'react-native';
+import { useSettings } from '../context/SettingsContext';
 
-export default function AnnouncementHeader() {
+export default function AnnouncementHeader({ onPressSettings }) {
+  const { theme } = useSettings();
+
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { borderColor: theme.colors.line, backgroundColor: theme.colors.card }]}>
       <View>
-        <Text style={styles.title}>안내방송 알림</Text>
-        <Text style={styles.subtitle}>실시간 음성 인식</Text>
+        <Text
+          style={{
+            fontSize: Math.round(18 * theme.scale),
+            fontWeight: theme.weight,
+            color: theme.colors.text,
+          }}
+        >
+          안내방송 알림
+        </Text>
+        <Text
+          style={{
+            marginTop: 2,
+            fontSize: Math.round(12 * theme.scale),
+            color: theme.colors.sub,
+          }}
+        >
+          실시간 음성 인식
+        </Text>
       </View>
 
       {/* 설정 아이콘 */}
-      <Pressable onPress={() => console.log('설정 클릭')}>
-        <Image source={require('../assets/Setting.png')} style={styles.icon} />
+      <Pressable
+        onPress={onPressSettings}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel="설정 열기"
+      >
+        <Image
+          source={require('../assets/Setting.png')}
+          style={[styles.icon, { tintColor: theme.colors.sub }]}
+        />
       </Pressable>
     </View>
   );
@@ -23,22 +50,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e6e6e6',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  subtitle: {
-    marginTop: 2,
-    fontSize: 12,
-    color: '#6b7280',
   },
   icon: {
     width: 45,
     height: 45,
-    tintColor: '#6b7280',
   },
 });
