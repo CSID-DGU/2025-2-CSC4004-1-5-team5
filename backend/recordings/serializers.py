@@ -9,7 +9,6 @@ class SessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
         fields = ["id", 
-                "session_id", 
                 "status", 
                 "progress", 
                 "created_at", 
