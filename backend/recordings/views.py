@@ -45,7 +45,7 @@ class SessionViewSet(viewsets.ViewSet):
 
         return Response(
             {
-                "detail": "Session이 삭제되었습니다.",
+                "detail": "[Session: {session_id}] 삭제",
                 "id": deleted_id,
                 "session_id": str(deleted_uuid),
             },
