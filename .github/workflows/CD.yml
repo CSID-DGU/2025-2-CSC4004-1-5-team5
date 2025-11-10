@@ -7,6 +7,7 @@ on:
       branches: ["main", "dev"]
 
   env:
+    IMAGE: ${{ secrets.DOCKER_USERNAME }}/soribom-be
     PROJECT_DIR: /home/ubuntu/2025-2-CSC4004-1-5-TEAM5/backend
 
 jobs:
