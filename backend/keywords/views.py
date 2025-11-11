@@ -21,40 +21,54 @@ class KeywordViewSet(viewsets.ViewSet):
         if not session_id:
             return Response({"detail": "session_id 필요"}, status=status.HTTP_400_BAD_REQUEST)
 
-        session = get_object_or_404(Session, session_id=session_id)
+        session = get_object_or_404(Session, id=session_id)
         created = []
 
         for word in keywords:
+            word = word.strip()
             obj, _ = Keyword.objects.get_or_create(session=session, word=word)
             created.append(obj)
+            
+        total_count = Keyword.objects.filter(session=session).count()
 
         serializer = KeywordSerializer(created, many=True)
-        return Response({"등록 키워드 ": serializer.data}, status=status.HTTP_201_CREATED)
+        return Response({"total_keywords": total_count,  
+                        "keywords": serializer.data}, status=status.HTTP_201_CREATED)
 
     #[GET]    /api/keywords/
     #  세션별 키워드 조회
-    def retrieve(self, request, pk=None):
+    def list(self, request, pk=None):
         """(?session_id=1)"""
         session_id = request.query_params.get("session_id")
         if not session_id:
             return Response({"detail": "session_id 필요"}, status=status.HTTP_400_BAD_REQUEST)
 
-        keywords = Keyword.objects.filter(session_id=session_id)
+        keywords = Keyword.objects.filter(session__id=session_id)
         serializer = KeywordSerializer(keywords, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "session_id": int(session_id),
+                "total_keywords": len(serializer.data), 
+                "keywords": serializer.data,
+            }, status=status.HTTP_200_OK    
+        )
 
     #[DELETE]  /api/keywords/{id}/
     #  특정 키워드 삭제
     def destroy(self, request, pk=None):
         keyword = get_object_or_404(Keyword, id=pk)
-        session_id = keyword.session_id
+        
+        session_id = keyword.session.id
         word = keyword.word
         keyword.delete()
+        
+        remaining_count = Keyword.objects.filter(session__id=session_id).count()
 
         return Response(
             {
                 "detail": f"Keyword '{word}' 삭제",
                 "session_id": str(session_id),
+                "remaining_keywords": remaining_count,
                 "keyword_id": pk,
             },
             status=status.HTTP_200_OK,

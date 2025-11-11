@@ -38,16 +38,13 @@ class SessionViewSet(viewsets.ViewSet):
     # 세션 삭제
     def destroy(self, request, pk=None):
         session = get_object_or_404(Session, id=pk)
-        deleted_id = session.id
-        deleted_uuid = session.session_id
-
+        session_id = session.id
         session.delete()
 
         return Response(
             {
-                "detail": "[Session: {session_id}] 삭제",
-                "id": deleted_id,
-                "session_id": str(deleted_uuid),
+                "detail": f"[Session: {session_id}] 삭제",
+                "id": session_id,
             },
             status=status.HTTP_200_OK, 
         )
