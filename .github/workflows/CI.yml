@@ -15,7 +15,7 @@ jobs:
     name: Run tests
     runs-on: ubuntu-latest
     env:
-      PYTHON_VERSION: 3.10
+      PYTHON_VERSION: "3.10"
 
     defaults:
       run:
