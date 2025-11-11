@@ -19,7 +19,6 @@ class Session(models.Model):
         ("EXPIRED", "Expired"),
     ]
 
-    session_id = models.UUIDField(default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="RECORDING")
     progress = models.FloatField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
