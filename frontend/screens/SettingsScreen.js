@@ -1,3 +1,4 @@
+// screens/SettingsScreen.js
 import { useState } from 'react';
 import {
   StyleSheet,
@@ -43,14 +44,11 @@ export default function SettingsScreen({ onClose }) {
     const raw = mapXToValue(e.nativeEvent.locationX);
     const diffToDetent = Math.abs(raw - DETENT);
 
-    // 아직 걸리지 않았고 75% 근처면 스냅 + 잠금
     if (!detentLatched && diffToDetent <= SNAP_EPS) {
       persist({ ...settings, fontScalePct: DETENT });
       setDetentLatched(true);
       return;
     }
-
-    // 75%에서 잠겨있으면 충분히 벗어나야 통과
     if (detentLatched) {
       if (Math.abs(raw - DETENT) >= UNLOCK_EPS) {
         setDetentLatched(false);
@@ -60,8 +58,6 @@ export default function SettingsScreen({ onClose }) {
       }
       return;
     }
-
-    // 일반 이동
     persist({ ...settings, fontScalePct: raw });
   };
 
@@ -91,7 +87,11 @@ export default function SettingsScreen({ onClose }) {
         {/* 알림 설정 */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <View style={styles.cardTitleRow}>
-            <View style={[styles.leadIcon, { backgroundColor: '#E9F0FF' }]} />
+            {/* ✅ 추가: 알림 아이콘 */}
+            <Image
+              source={require('../assets/alarm.png')}
+              style={styles.leadImg}
+            />
             <Text style={[styles.cardTitle, t(theme, 16)]}>알림 설정</Text>
           </View>
 
@@ -115,7 +115,11 @@ export default function SettingsScreen({ onClose }) {
         {/* 접근성 설정 */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <View style={styles.cardTitleRow}>
-            <View style={[styles.leadIcon, { backgroundColor: '#F5E9FF' }]} />
+            {/* ✅ 추가: 접근성 아이콘 */}
+            <Image
+              source={require('../assets/Accessibility.png')}
+              style={styles.leadImg}
+            />
             <Text style={[styles.cardTitle, t(theme, 16)]}>접근성 설정</Text>
           </View>
 
@@ -269,7 +273,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  leadIcon: { width: 22, height: 22, borderRadius: 11 },
+  // ✅ 추가: 타이틀 왼쪽 아이콘 스타일
+  leadImg: { width: 20, height: 20, resizeMode: 'contain' },
+
   cardTitle: { fontWeight: '700' },
 
   rowBetween: {
