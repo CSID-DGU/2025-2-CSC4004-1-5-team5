@@ -1,11 +1,12 @@
 // components/Keywords.js
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TextInput, Pressable } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSettings } from '../context/SettingsContext';
+import { useSession } from '../context/SessionContext';
+import { api } from '../api/instance';
 
+// 개별 칩 UI
 function Chip({ text, onRemove, theme }) {
-  // ✅ 글자 크기에 따라 칩 크기 자동 조정
   const scaledHeight = 28 * theme.scale;
   const scaledPaddingV = 6 * theme.scale;
   const scaledPaddingH = 10 * theme.scale;
@@ -54,69 +55,171 @@ function Chip({ text, onRemove, theme }) {
   );
 }
 
-/** 최초 1회 시드용 기본 키워드 */
-const DEFAULT_KEYWORDS = [
-  '○○○○', '○○○○', '승강장', '안전', '지연', '출발', '혼잡', '환승', '좌측'
-];
-
-export default function Keywords({ sessionId = 'default', onChange }) {
+// items: [{ id: number | null, text: string }]
+export default function Keywords({ onChange }) {
   const { theme } = useSettings();
-  const storageKey = useMemo(() => `keywords:${sessionId}`, [sessionId]);
+  const { sessionId } = useSession();
 
   const [input, setInput] = useState('');
   const [items, setItems] = useState([]);
   const [collapsed, setCollapsed] = useState(true);
 
-  const persist = async (next) => {
-    setItems(next);
-    onChange?.(next);
+  // 공통: items 변경 시 상위로 알림
+  const emitChange = (nextItems) => {
+    setItems(nextItems);
+    onChange?.(nextItems.map((i) => i.text));
+  };
+
+  // 1. 키워드 조회 (GET /keywords/?session_id=...)
+  const fetchKeywords = async () => {
+    if (!sessionId) {
+      console.log('[Keywords] 세션 ID 없음, 서버 조회 건너뜀');
+      return;
+    }
+
     try {
-      await AsyncStorage.setItem(storageKey, JSON.stringify(next));
+      console.log(
+        `[Keywords] 서버 키워드 조회: GET /keywords/?session_id=${sessionId}`,
+      );
+
+      const res = await api.get('/keywords/', {
+        params: { session_id: sessionId },
+      });
+
+      console.log('[Keywords] 조회 status:', res.status);
+      console.log(
+        '[Keywords] 조회 데이터:',
+        JSON.stringify(res.data, null, 2),
+      );
+
+      // 응답 예시:
+      // {
+      //   "session_id": 7,
+      //   "total_keywords": 1,
+      //   "keywords": [
+      //     { "id": 1, "word": "ㅎㄹ", "created_at": "..." }
+      //   ]
+      // }
+      const rawList = Array.isArray(res.data?.keywords)
+        ? res.data.keywords
+        : [];
+
+      const list = rawList.map((k, idx) => {
+        // 혹시나 문자열 배열이 올 경우도 방어적으로 처리
+        if (typeof k === 'string') {
+          return {
+            id: null,
+            text: k,
+            _localKey: `srv-${idx}-${k}`,
+          };
+        }
+
+        const id = k.id ?? null;
+        const word = k.word ?? '';
+
+        return {
+          id,
+          text: String(word),
+          _localKey: `srv-${id ?? idx}-${word}`,
+        };
+      });
+
+      emitChange(list);
     } catch (e) {
-      console.warn('키워드 저장 실패:', e);
+      console.warn(
+        '[Keywords] 서버 키워드 조회 실패:',
+        e.response?.data ?? e.message,
+      );
     }
   };
 
+  // 세션 ID가 준비되면 한 번 조회
   useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(storageKey);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            setItems(parsed);
-            onChange?.(parsed);
-            return;
-          }
-        }
-        await AsyncStorage.setItem(storageKey, JSON.stringify(DEFAULT_KEYWORDS));
-        setItems(DEFAULT_KEYWORDS);
-        onChange?.(DEFAULT_KEYWORDS);
-      } catch (e) {
-        console.warn('키워드 로드 실패:', e);
-        setItems(DEFAULT_KEYWORDS);
-        onChange?.(DEFAULT_KEYWORDS);
-      }
-    })();
-  }, [storageKey]);
+    fetchKeywords();
+    // sessionId가 바뀔 때마다 다시 조회
+  }, [sessionId]);
 
+  // 2. 키워드 등록 (POST /keywords/)
   const add = async () => {
     const v = input.trim();
     if (!v) return;
-    const existsIdx = items.findIndex(k => k.toLowerCase() === v.toLowerCase());
-    let next;
-    if (existsIdx >= 0) {
-      next = [items[existsIdx], ...items.filter((_, i) => i !== existsIdx)];
-    } else {
-      next = [v, ...items];
+
+    if (!sessionId) {
+      console.log('[Keywords] 세션 ID 없음, 서버에 전송하지 않음');
+      return;
     }
-    setInput('');
-    await persist(next);
+
+    try {
+      const payload = {
+        // 스펙: { "session_id": 5, "keywords": ["지연", "탑승구", ...] }
+        session_id: sessionId,
+        keywords: [v],
+      };
+
+      console.log('[Keywords] 등록 요청: POST /keywords/', payload);
+
+      const res = await api.post('/keywords/', payload);
+
+      console.log('[Keywords] 등록 응답 status:', res.status);
+      console.log(
+        '[Keywords] 등록 응답 데이터:',
+        JSON.stringify(res.data, null, 2),
+      );
+
+      // 등록 후에는 항상 서버 기준으로 다시 불러오기
+      setInput('');
+      await fetchKeywords();
+    } catch (e) {
+      console.warn(
+        '[Keywords] 서버 키워드 등록 실패:',
+        e.response?.data ?? e.message,
+      );
+    }
   };
 
-  const remove = async (idx) => {
-    const next = items.filter((_, i) => i !== idx);
-    await persist(next);
+  // 3. 키워드 삭제 (DELETE /keywords/{id}/)
+  const remove = async (item) => {
+    const { id, text } = item;
+
+    // id가 없으면 서버에 삭제 요청 불가 → 로컬에서만 제거
+    if (id == null) {
+      console.warn(
+        `[Keywords] 이 키워드는 id가 없어 서버에 삭제 요청을 보낼 수 없습니다: "${text}"`,
+      );
+      const next = items.filter((it) => it !== item);
+      emitChange(next);
+      return;
+    }
+
+    if (!sessionId) {
+      console.log('[Keywords] 세션 ID 없음, 삭제 요청 안 함');
+      const next = items.filter((it) => it !== item);
+      emitChange(next);
+      return;
+    }
+
+    try {
+      console.log(`[Keywords] 삭제 요청: DELETE /keywords/${id}/`);
+
+      const res = await api.delete(`/keywords/${id}/`);
+
+      console.log('[Keywords] 삭제 응답 status:', res.status);
+      console.log(
+        '[Keywords] 삭제 응답 데이터:',
+        JSON.stringify(res.data, null, 2),
+      );
+
+      // 삭제 후에도 서버 기준으로 다시 불러오고 싶다면:
+      // await fetchKeywords();
+      // 현재 방식대로 로컬에서만 제거하려면 아래 코드 유지
+      const next = items.filter((it) => it.id !== id);
+      emitChange(next);
+    } catch (e) {
+      console.warn(
+        '[Keywords] 서버 키워드 삭제 실패:',
+        e.response?.data ?? e.message,
+      );
+    }
   };
 
   return (
@@ -136,6 +239,7 @@ export default function Keywords({ sessionId = 'default', onChange }) {
         등록한 키워드가 안내방송에 포함되면 알림을 받습니다
       </Text>
 
+      {/* 입력 영역 */}
       <View style={[styles.inputRow, { gap: 8 }]}>
         <TextInput
           value={input}
@@ -172,6 +276,7 @@ export default function Keywords({ sessionId = 'default', onChange }) {
         </Pressable>
       </View>
 
+      {/* 리스트 헤더 */}
       <View style={styles.rowHeader}>
         <Text
           style={{
@@ -182,7 +287,7 @@ export default function Keywords({ sessionId = 'default', onChange }) {
         >
           등록된 키워드 ({items.length})
         </Text>
-        <Pressable onPress={() => setCollapsed(p => !p)}>
+        <Pressable onPress={() => setCollapsed((p) => !p)}>
           <Text
             style={{
               fontSize: Math.round(12 * theme.scale),
@@ -195,9 +300,15 @@ export default function Keywords({ sessionId = 'default', onChange }) {
         </Pressable>
       </View>
 
+      {/* 칩 목록 */}
       <View style={[styles.chips, collapsed && styles.chipsCollapsed]}>
-        {items.map((t, i) => (
-          <Chip key={`${t}-${i}`} text={t} onRemove={() => remove(i)} theme={theme} />
+        {items.map((item, idx) => (
+          <Chip
+            key={item._localKey ?? item.id ?? `${item.text}-${idx}`}
+            text={item.text}
+            onRemove={() => remove(item)}
+            theme={theme}
+          />
         ))}
       </View>
     </View>
