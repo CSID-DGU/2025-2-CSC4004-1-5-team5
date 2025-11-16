@@ -6,7 +6,10 @@ import React, {
   useState,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { api } from "../api/instance"; // api 폴더 기준 경로
+import { api } from "../api/instance";
+
+// AsyncStorage에 사용할 키 (이전 잘못된 값과 충돌 피하기 위해 v2로 분리)
+const SESSION_STORAGE_KEY = "sessionId_v2";
 
 // 세션 정보를 보관할 컨텍스트 생성
 const SessionContext = createContext(null);
@@ -21,15 +24,18 @@ async function createNewSession() {
   console.log("[Session] 새 세션 생성 응답 데이터:", res.data);
 
   // 실제 응답 필드명에 맞게 선택 (id 또는 session_id)
-  const newId = res.data.id ?? res.data.session_id;
+  const rawId = res.data.id ?? res.data.session_id;
 
-  if (!newId) {
+  if (rawId === undefined || rawId === null) {
     console.log("[Session] 응답 데이터에 세션 ID가 없습니다.");
     throw new Error("세션 ID를 응답에서 찾을 수 없습니다.");
   }
 
+  // 🔥 반드시 문자열로 변환해서 저장해야 함
+  const newId = String(rawId);
+
   // AsyncStorage에 세션 ID 저장
-  await AsyncStorage.setItem("sessionId", newId);
+  await AsyncStorage.setItem(SESSION_STORAGE_KEY, newId);
   console.log("[Session] 새 세션 ID AsyncStorage에 저장 완료:", newId);
 
   return newId;
@@ -48,7 +54,7 @@ export function SessionProvider({ children }) {
         console.log("[Session] 앱 시작, 세션 초기화 시작");
 
         // 1. 기기에 저장된 세션 ID가 있는지 확인
-        const storedId = await AsyncStorage.getItem("sessionId");
+        const storedId = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
         console.log("[Session] AsyncStorage에서 읽은 sessionId:", storedId);
 
         if (storedId) {
@@ -106,7 +112,7 @@ export function SessionProvider({ children }) {
   const resetSession = async () => {
     try {
       console.log("[Session] 세션 리셋 시작");
-      await AsyncStorage.removeItem("sessionId");
+      await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
       console.log("[Session] AsyncStorage의 sessionId 제거 완료");
 
       const newId = await createNewSession();
@@ -119,10 +125,10 @@ export function SessionProvider({ children }) {
   };
 
   const value = {
-    sessionId,    // 현재 사용 중인 세션 ID
+    sessionId, // 현재 사용 중인 세션 ID
     setSessionId, // 필요시 수동으로 세션 ID를 바꾸고 싶을 때 사용
-    loading,      // 세션 초기화 중인지 여부
-    error,        // 세션 초기화 중 발생한 에러 정보
+    loading, // 세션 초기화 중인지 여부
+    error, // 세션 초기화 중 발생한 에러 정보
     resetSession, // 강제 세션 리셋 함수
   };
 
