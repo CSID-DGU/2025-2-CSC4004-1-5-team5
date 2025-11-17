@@ -7,6 +7,8 @@ __pycache__/
 # AI 관련 파일
 *.pth
 
+.vscode/
+
 # C extensions
 *.so
 
