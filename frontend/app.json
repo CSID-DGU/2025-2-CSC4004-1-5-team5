@@ -24,6 +24,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "실시간 안내방송을 인식하기 위해 마이크 접근 권한이 필요합니다."
+        }
+      ]
+    ]
   }
 }
