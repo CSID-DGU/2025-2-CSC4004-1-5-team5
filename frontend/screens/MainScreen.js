@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
-import { StyleSheet, View, ScrollView, Alert } from 'react-native'; // 1. Alert 추가
-import { Audio } from 'expo-av'; // 2. Audio 임포트
-import * as Sharing from 'expo-sharing'; // 3. Sharing 임포트
+import { useState, useMemo, useRef } from 'react';
+import { StyleSheet, View, ScrollView, Alert } from 'react-native';
+import { Audio } from 'expo-av';
+import * as Sharing from 'expo-sharing';
 
+// 컴포넌트 임포트
 import AnnouncementHeader from '../components/AnnouncementHeader';
 import RealtimeHistoryTabs from '../components/RealtimeHistoryTabs';
 import CoreInfo from '../components/CoreInfo';
@@ -13,63 +14,106 @@ import BroadcastHistory from '../components/BroadcastHistory';
 import SettingsScreen from './SettingsScreen';
 import { useSettings } from '../context/SettingsContext';
 
+const CHUNK_DURATION_MS = 10000; // 10초
+
 export default function MainScreen() {
   const { theme } = useSettings();
   const [route, setRoute] = useState('home');
   const [tab, setTab] = useState('realtime');
   const [recording, setRecording] = useState(false);
-  const [recordingObject, setRecordingObject] = useState(null); // 4. 녹음 객체 state 추가
 
-  // 5. 기존 toggleRecording 함수를 실제 녹음/중지/공유 로직으로 대체
+  // state 대신 ref 사용 (setInterval 내부에서 최신 값 접근)
+  const recordingObjectRef = useRef(null);
+  const intervalRef = useRef(null);
+
+  // (신규) 새로운 청크 녹음 시작 헬퍼 함수
+  const startNewChunk = async () => {
+    try {
+      console.log('새로운 10초 청크 녹음 시작...');
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingObjectRef.current = recording;
+    } catch (err) {
+      console.error('새 청크 녹음 시작 실패:', err);
+      Alert.alert('녹음 실패', '새 녹음 시작에 실패했습니다.');
+    }
+  };
+
+  // (신규) 현재 청크 중지 및 저장 헬퍼 함수 (공유 X)
+  const stopAndSaveChunk = async () => {
+    if (!recordingObjectRef.current) return;
+    
+    console.log('이전 10초 청크 저장 중...');
+    try {
+      const recordingToSave = recordingObjectRef.current;
+      recordingObjectRef.current = null; // ref 비우기
+
+      await recordingToSave.stopAndUnloadAsync();
+      const uri = recordingToSave.getURI();
+      console.log('10초 청크 저장 완료:', uri);
+      // TODO: 여기서 uri를 API로 전송할 수 있습니다.
+      
+    } catch (error) {
+      console.error('청크 저장 실패:', error);
+    }
+  };
+
+  // (수정) toggleRecording 로직 전체 변경
   const toggleRecording = async () => {
     if (recording) {
       // --- 녹음 중지 ---
-      console.log('녹음을 중지합니다...');
+      console.log('전체 녹음을 중지합니다...');
       setRecording(false);
-      
-      try {
-        await recordingObject.stopAndUnloadAsync(); // 녹음 중지 및 언로드
-        const uri = recordingObject.getURI(); // 파일 URI 가져오기
-        console.log('녹음 완료. 파일 위치:', uri);
 
-        // 파일 공유 기능 실행
-        if (!(await Sharing.isAvailableAsync())) {
-          Alert.alert('공유 실패', '이 기기에서는 파일 공유를 사용할 수 없습니다.');
-          return;
+      // 1. 10초 루프 정지
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+
+      // 2. 마지막 (10초 미만) 청크 중지 및 저장
+      if (!recordingObjectRef.current) return;
+
+      try {
+        const finalRecording = recordingObjectRef.current;
+        recordingObjectRef.current = null;
+
+        await finalRecording.stopAndUnloadAsync();
+        const uri = finalRecording.getURI();
+        console.log('마지막 청크 저장 완료:', uri);
+
+        // 3. 마지막 청크만 공유해서 들어보기
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri);
         }
-        await Sharing.shareAsync(uri); // 공유 시트 열기
 
       } catch (error) {
-        console.error('녹음 중지 또는 공유 실패:', error);
-        Alert.alert('오류', '녹음 중지 중 오류가 발생했습니다.');
-      } finally {
-        setRecordingObject(null); // 녹음 객체 초기화
+        console.error('마지막 청크 중지/저장 실패:', error);
       }
-      
+
     } else {
       // --- 녹음 시작 ---
-      console.log('녹음을 시작합니다...');
+      console.log('10초 단위 청크 녹음을 시작합니다...');
+      setRecording(true);
 
-      try {
-        // iOS/Android 오디오 모드 설정
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-        });
+      // 1. 첫 번째 청크 즉시 시작
+      await startNewChunk();
 
-        const { recording: newRecording } = await Audio.Recording.createAsync(
-           Audio.RecordingOptionsPresets.HIGH_QUALITY // 녹음 품질
-        );
+      // 2. 10초 간격으로 루프 설정
+      intervalRef.current = setInterval(async () => {
+        // (10초 도달)
+        // 1. 이전 청크 중지/저장 (공유 X)
+        await stopAndSaveChunk(); 
         
-        setRecordingObject(newRecording); // 녹음 객체 저장
-        setRecording(true); // 녹음 상태로 변경
-        
-        console.log('녹음 시작됨');
+        // 2. 다음 청크 즉시 시작 (이 사이에 약간의 갭 발생)
+        await startNewChunk();
 
-      } catch (err) {
-        console.error('녹음 시작 실패:', err);
-        Alert.alert('녹음 실패', '녹음 시작 중 오류가 발생했습니다.');
-      }
+      }, CHUNK_DURATION_MS);
     }
   };
 
@@ -102,18 +146,14 @@ export default function MainScreen() {
           <>
             <CoreInfo />
             <Keywords sessionId={sessionId} onChange={setKeywords} />
-            {/* recording이 true일 때 ListeningStatus가 보이도록 이미 구현되어 있음 */}
-            {recording && <ListeningStatus />} 
+            {recording && <ListeningStatus />}
           </>
         ) : (
           <BroadcastHistory keywords={keywords} maxCount={5} />
         )}
       </ScrollView>
 
-      {/* 하단 고정 버튼 */}
-      {/* LiveRecording의 onToggle이 호출되면(권한 확인 후) 
-        위에서 정의한 toggleRecording 함수가 실행됩니다.
-      */}
+      {/* 하단 고정 버튼 (LiveRecording.js는 수정 불필요) */}
       <LiveRecording recording={recording} onToggle={toggleRecording} />
     </View>
   );
