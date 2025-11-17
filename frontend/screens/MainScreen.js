@@ -13,20 +13,25 @@ import ListeningStatus from '../components/ListeningStatus';
 import BroadcastHistory from '../components/BroadcastHistory';
 import SettingsScreen from './SettingsScreen';
 import { useSettings } from '../context/SettingsContext';
+import { useSession } from '../context/SessionContext';
 
-const CHUNK_DURATION_MS = 10000; // 10초
+const CHUNK_DURATION_MS = 10000;
 
 export default function MainScreen() {
   const { theme } = useSettings();
+  const { sessionId, resetSession, loading: sessionLoading } = useSession(); 
+
   const [route, setRoute] = useState('home');
   const [tab, setTab] = useState('realtime');
   const [recording, setRecording] = useState(false);
 
-  // state 대신 ref 사용 (setInterval 내부에서 최신 값 접근)
   const recordingObjectRef = useRef(null);
   const intervalRef = useRef(null);
+  
+  // ✅ 키워드 state
+  const [keywords, setKeywords] = useState([]); // (["ㅎㅇ", "호호"])
 
-  // (신규) 새로운 청크 녹음 시작 헬퍼 함수
+  // (startNewChunk, stopAndSaveChunk 헬퍼 함수 - 변경 없음)
   const startNewChunk = async () => {
     try {
       console.log('새로운 10초 청크 녹음 시작...');
@@ -44,39 +49,36 @@ export default function MainScreen() {
     }
   };
 
-  // (신규) 현재 청크 중지 및 저장 헬퍼 함수 (공유 X)
   const stopAndSaveChunk = async () => {
     if (!recordingObjectRef.current) return;
     
     console.log('이전 10초 청크 저장 중...');
     try {
       const recordingToSave = recordingObjectRef.current;
-      recordingObjectRef.current = null; // ref 비우기
+      recordingObjectRef.current = null;
 
       await recordingToSave.stopAndUnloadAsync();
       const uri = recordingToSave.getURI();
       console.log('10초 청크 저장 완료:', uri);
-      // TODO: 여기서 uri를 API로 전송할 수 있습니다.
+      // TODO: 여기서 uri와 sessionId를 API로 전송할 수 있습니다.
       
     } catch (error) {
       console.error('청크 저장 실패:', error);
     }
   };
 
-  // (수정) toggleRecording 로직 전체 변경
+  // ✅ toggleRecording 수정
   const toggleRecording = async () => {
     if (recording) {
       // --- 녹음 중지 ---
       console.log('전체 녹음을 중지합니다...');
       setRecording(false);
 
-      // 1. 10초 루프 정지
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
 
-      // 2. 마지막 (10초 미만) 청크 중지 및 저장
       if (!recordingObjectRef.current) return;
 
       try {
@@ -87,38 +89,43 @@ export default function MainScreen() {
         const uri = finalRecording.getURI();
         console.log('마지막 청크 저장 완료:', uri);
 
-        // 3. 마지막 청크만 공유해서 들어보기
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri);
         }
 
+        // ✅ (수정) 녹음 종료 시, 현재 'keywords' state를 resetSession에 전달
+        console.log("녹음 종료됨. 새 세션으로 교체를 요청합니다...");
+        await resetSession(keywords); // keywords: ["ㅎㅇ", "호호"]
+
       } catch (error) {
-        console.error('마지막 청크 중지/저장 실패:', error);
+        console.error('마지막 청크 중지/저장 또는 세션 리셋 실패:', error);
       }
 
     } else {
       // --- 녹음 시작 ---
-      console.log('10초 단위 청크 녹음을 시작합니다...');
+      if (sessionLoading) {
+        Alert.alert("세션 준비 중", "세션이 준비 중입니다. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+      if (!sessionId) {
+        Alert.alert("세션 오류", "세션 ID가 없습니다. 앱을 다시 시작해주세요.");
+        return;
+      }
+      
+      console.log(`[Session: ${sessionId}] 10초 단위 청크 녹음을 시작합니다...`);
       setRecording(true);
 
-      // 1. 첫 번째 청크 즉시 시작
       await startNewChunk();
 
-      // 2. 10초 간격으로 루프 설정
       intervalRef.current = setInterval(async () => {
-        // (10초 도달)
-        // 1. 이전 청크 중지/저장 (공유 X)
         await stopAndSaveChunk(); 
-        
-        // 2. 다음 청크 즉시 시작 (이 사이에 약간의 갭 발생)
         await startNewChunk();
-
       }, CHUNK_DURATION_MS);
     }
   };
 
-  const sessionId = 'default';
-  const [keywords, setKeywords] = useState([]);
+  // const sessionId = 'default'; // (제거됨)
+  // const [keywords, setKeywords] = useState([]); // (위로 이동)
 
   const paddings = useMemo(() => ({
     outerPad: Math.round(16 * theme.scale),
@@ -145,6 +152,7 @@ export default function MainScreen() {
         {tab === 'realtime' ? (
           <>
             <CoreInfo />
+            {/* ✅ Keywords가 변경될 때마다 MainScreen의 'keywords' state 업데이트 */}
             <Keywords sessionId={sessionId} onChange={setKeywords} />
             {recording && <ListeningStatus />}
           </>
@@ -153,8 +161,11 @@ export default function MainScreen() {
         )}
       </ScrollView>
 
-      {/* 하단 고정 버튼 (LiveRecording.js는 수정 불필요) */}
-      <LiveRecording recording={recording} onToggle={toggleRecording} />
+      <LiveRecording 
+        recording={recording} 
+        onToggle={toggleRecording} 
+        disabled={sessionLoading && !recording}
+      />
     </View>
   );
 }
@@ -162,6 +173,6 @@ export default function MainScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: {
-    // padding과 gap은 theme.scale에 맞춰 동적으로 설정 (위에서 덮어씀)
+    // ...
   },
 });

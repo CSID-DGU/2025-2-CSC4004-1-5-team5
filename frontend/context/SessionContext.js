@@ -1,102 +1,65 @@
-// FRONTEND/context/SessionContext.js
 import React, {
   createContext,
   useContext,
   useEffect,
   useState,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "../api/instance";
-
-// AsyncStorage에 사용할 키 (이전 잘못된 값과 충돌 피하기 위해 v2로 분리)
-const SESSION_STORAGE_KEY = "sessionId_v2";
 
 // 세션 정보를 보관할 컨텍스트 생성
 const SessionContext = createContext(null);
 
-// 새 세션 생성 + AsyncStorage에 저장하는 함수
-async function createNewSession() {
-  console.log("[Session] 새 세션 생성 요청 시작 POST /sessions/");
+/**
+ * 새 세션을 생성하는 헬퍼 함수
+ * (previousSessionId는 백엔드가 무시하지만 일단 전송)
+ */
+async function createNewSession(previousSessionId = null) {
+  const endpoint = "/sessions/";
+  const payload = {};
 
-  const res = await api.post("/sessions/");
+  if (previousSessionId) {
+    payload.previous_session_id = previousSessionId;
+    console.log(
+      `[Session] 새 세션 생성 요청 (이전 ID: ${previousSessionId}) POST ${endpoint}`
+    );
+  } else {
+    console.log(`[Session] 새 세션 생성 요청 POST ${endpoint}`);
+  }
 
-  // 백엔드 응답 전체를 한 번 찍어보기 (실제 응답 구조 확인용)
+  const res = await api.post(endpoint, payload);
   console.log("[Session] 새 세션 생성 응답 데이터:", res.data);
 
-  // 실제 응답 필드명에 맞게 선택 (id 또는 session_id)
   const rawId = res.data.id ?? res.data.session_id;
-
   if (rawId === undefined || rawId === null) {
     console.log("[Session] 응답 데이터에 세션 ID가 없습니다.");
     throw new Error("세션 ID를 응답에서 찾을 수 없습니다.");
   }
 
-  // 🔥 반드시 문자열로 변환해서 저장해야 함
   const newId = String(rawId);
-
-  // AsyncStorage에 세션 ID 저장
-  await AsyncStorage.setItem(SESSION_STORAGE_KEY, newId);
-  console.log("[Session] 새 세션 ID AsyncStorage에 저장 완료:", newId);
-
+  console.log("[Session] 새 세션 ID:", newId);
   return newId;
 }
 
 export function SessionProvider({ children }) {
   const [sessionId, setSessionId] = useState(null);
-  const [loading, setLoading] = useState(true); // 세션 준비 중 여부
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // 1. 앱 시작 시: 항상 새 세션 생성 (변경 없음)
   useEffect(() => {
     const initSession = async () => {
       try {
         setLoading(true);
         console.log("====================================");
-        console.log("[Session] 앱 시작, 세션 초기화 시작");
-
-        // 1. 기기에 저장된 세션 ID가 있는지 확인
-        const storedId = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
-        console.log("[Session] AsyncStorage에서 읽은 sessionId:", storedId);
-
-        if (storedId) {
-          try {
-            // 2. 서버에 조회해서 유효한 세션인지 확인
-            console.log(
-              `[Session] 기존 세션 ID로 GET /sessions/${storedId}/ 요청`
-            );
-            const res = await api.get(`/sessions/${storedId}/`);
-
-            // 응답 상태 및 데이터 로그
-            console.log(
-              "[Session] 기존 세션 조회 성공, status:",
-              res.status
-            );
-            console.log("[Session] 기존 세션 조회 응답 데이터:", res.data);
-
-            // 에러 없이 통과하면 그대로 사용
-            setSessionId(storedId);
-            setError(null);
-            setLoading(false);
-            console.log("[Session] 기존 세션 ID를 그대로 사용합니다:", storedId);
-            console.log("====================================");
-            return;
-          } catch (e) {
-            // 404 등으로 유효하지 않으면 새로 생성
-            console.log(
-              "[Session] 기존 세션 조회 실패, 새로 생성합니다. status:",
-              e?.response?.status
-            );
-          }
-        } else {
-          console.log("[Session] 저장된 세션 ID가 없습니다. 새로 생성합니다.");
-        }
-
-        // 3. 저장된 세션이 없거나, 유효하지 않을 때 → 새 세션 생성
-        const newId = await createNewSession();
-        console.log("[Session] 새 세션 생성 완료, ID:", newId);
+        console.log("[Session] 앱 시작, 새 세션 초기화 시작");
+        
+        const newId = await createNewSession(null);
+        
+        console.log("[Session] 앱 시작, 새 세션 생성 완료, ID:", newId);
         setSessionId(newId);
         setError(null);
       } catch (e) {
-        console.log("[Session] 세션 초기화 실패:", e);
+        console.log("[Session] 초기 세션 생성 실패:", e);
         setError(e);
       } finally {
         setLoading(false);
@@ -108,28 +71,59 @@ export function SessionProvider({ children }) {
     initSession();
   }, []);
 
-  // 필요할 때 세션을 강제로 리셋하고 싶을 때 사용할 수 있는 함수
-  const resetSession = async () => {
+  // ✅ 2. (수정) "세션 교체" 함수
+  // keywordsToTransfer (string[] 예: ["ㅎㅇ", "호호"])를 인자로 받음
+  const resetSession = async (keywordsToTransfer = []) => {
+    setLoading(true);
+    setError(null);
+
     try {
-      console.log("[Session] 세션 리셋 시작");
-      await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
-      console.log("[Session] AsyncStorage의 sessionId 제거 완료");
+      const oldSessionId = sessionId; 
+      console.log("[Session] 세션 교체 시작 (이전 ID:", oldSessionId, ")");
+      
+      // 1. 새 세션 생성
+      const newId = await createNewSession(oldSessionId);
 
-      const newId = await createNewSession();
-      console.log("[Session] 세션 리셋 후 새 세션 ID:", newId);
+      console.log("[Session] 새 세션으로 교체 완료, New ID:", newId);
+      
+      // 2. (추가) 새 세션에 키워드 재등록
+      if (keywordsToTransfer.length > 0) {
+        console.log(`[Session] ${keywordsToTransfer.length}개의 키워드를 새 세션(${newId})에 재등록합니다.`);
+        try {
+          const payload = {
+            session_id: newId,
+            keywords: keywordsToTransfer // string[]
+          };
+          console.log('[Session] 키워드 재등록 요청: POST /keywords/', payload);
+          // (호출 URL: https://yeonhee.shop/api/keywords/)
+          await api.post('/keywords/', payload);
+          console.log(`[Session] 키워드 재등록 완료.`);
+        } catch (e) {
+           console.error('[Session] 키워드 재등록 실패:', e?.response?.data ?? e.message);
+           // 재등록에 실패해도 세션 교체는 완료된 것으로 간주.
+        }
+      } else {
+         console.log("[Session] 재등록할 키워드가 없습니다.");
+      }
 
-      setSessionId(newId);
+      // 3. (중요) 키워드 재등록까지 완료된 후, 앱 상태(sessionId)를 업데이트
+      // (이때 Keywords.js의 useEffect가 트리거되어 재등록된 키워드를 fetch함)
+      setSessionId(newId); 
+      
     } catch (e) {
-      console.log("[Session] 세션 리셋 실패:", e);
+      console.log("[Session] 세션 교체 실패:", e);
+      setError(e);
+      // 세션 생성 자체를 실패하면 ID를 바꾸지 않음
+    } finally {
+      setLoading(false); // 세션 교체 완료
     }
   };
 
   const value = {
-    sessionId, // 현재 사용 중인 세션 ID
-    setSessionId, // 필요시 수동으로 세션 ID를 바꾸고 싶을 때 사용
-    loading, // 세션 초기화 중인지 여부
-    error, // 세션 초기화 중 발생한 에러 정보
-    resetSession, // 강제 세션 리셋 함수
+    sessionId,
+    loading,
+    error,
+    resetSession, // 수정된 resetSession 함수
   };
 
   return (
@@ -139,7 +133,7 @@ export function SessionProvider({ children }) {
   );
 }
 
-// 다른 컴포넌트에서 세션을 사용하기 위한 훅
+// 훅 (변경 없음)
 export function useSession() {
   const ctx = useContext(SessionContext);
   if (!ctx) {
