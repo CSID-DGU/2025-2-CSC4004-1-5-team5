@@ -1,4 +1,4 @@
-version: '3.9'
+version: "3.9"
 
 services:
   web:
@@ -26,7 +26,6 @@ services:
     command: celery -A project worker -l info
     depends_on:
       - redis
-      - web
     env_file:
       - .env
     volumes:

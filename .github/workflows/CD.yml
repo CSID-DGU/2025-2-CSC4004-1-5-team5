@@ -4,57 +4,33 @@ on:
   workflow_run:
     workflows: ["CI with Docker"]
     types: [completed]
-    branches: ["main", "dev"]
 
 jobs:
   deploy:
-    name: Deploy to EC2 Server
+    name: Deploy to EC2
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    env:
-      IMAGE: ${{ secrets.DOCKER_USERNAME }}/soribom-be
-      PROJECT_DIR: /home/ubuntu/2025-2-CSC4004-1-5-TEAM5/backend
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Deploy over SSH
+      - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "--------------------------------------"
-            echo "🚀 [1/4] Docker Hub 로그인 (private repo 대비)"
-            if [ -n "${{ secrets.DOCKER_PASSWORD }}" ]; then
-              echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-            fi
+            echo "🚀 Deploy started"
 
-            echo "--------------------------------------"
-            echo "⚙️ [2/4] 환경변수 파일(.env) 업데이트"
-            echo "${{ secrets.ENV_FILE }}" > /home/${{ secrets.EC2_USER }}/.env
+            cd ${{ secrets.PROJECT_DIR }}
 
-            echo "--------------------------------------"
-            echo "🐳 [3/4] 최신 이미지 Pull 및 컨테이너 재시작"
-            docker pull ${{ env.IMAGE }}:latest
+            echo "🐳 Pulling latest image"
+            docker compose pull
 
-            # 기존 컨테이너 종료 및 삭제
-            docker stop soribom-be || true
-            docker rm soribom-be || true
+            echo "🔄 Restarting containers"
+            docker compose down
+            docker compose up -d
 
-            # 새 컨테이너 실행
-            docker run -d --name soribom-be \
-              --env-file /home/${{ secrets.EC2_USER }}/.env \
-              -v /etc/localtime:/etc/localtime:ro \
-              -v /etc/timezone:/etc/timezone:ro \
-              -e TZ=Asia/Seoul \
-              -p 8000:8000 \
-              ${{ env.IMAGE }}:latest
-
-            echo "--------------------------------------"
-            echo "🧹 [4/4] 사용하지 않는 이미지 정리"
+            echo "🧹 Cleaning old images"
             docker image prune -f
 
-            echo "✅ 배포 완료! (http://<EC2_IP>:8000)"
+            echo "🎉 Deploy completed!"
