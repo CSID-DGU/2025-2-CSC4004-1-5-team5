@@ -1,13 +1,19 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
-from .views import SessionViewSet
+from .views import (
+    SessionViewSet,
+    AudioChunkViewSet,
+    SessionStatusViewSet,
+    SessionResultViewSet
+)
 
 app_name = "recordings"
 
 router = DefaultRouter()
-router.register(r'sessions', SessionViewSet, basename='sessions')
 
-# 추후 확장용
-# router.register(r'audio', AudioViewSet, basename='audio')
-# router.register(r'results', ResultViewSet, basename='results')
+router.register(r"session", SessionViewSet, basename="session")
+router.register(r"audio", AudioChunkViewSet, basename="audio")
+router.register(r"session-status", SessionStatusViewSet, basename="session-status")
+router.register(r"results", SessionResultViewSet, basename="session-results")
 
 urlpatterns = router.urls

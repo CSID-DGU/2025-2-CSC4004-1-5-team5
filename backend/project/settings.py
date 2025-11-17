@@ -54,7 +54,6 @@ INSTALLED_APPS = [
     
     'recordings',
     'keywords',
-    'ai_pipelines',
     
 ]
 
