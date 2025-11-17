@@ -8,50 +8,56 @@ import {
   Linking,
 } from 'react-native';
 import { useSettings } from '../context/SettingsContext';
-import { Audio } from 'expo-av';
+import { requestRecordingPermissionsAsync } from 'expo-audio';
 
-// 1. 'disabled' prop 추가 (기본값 false)
 export default function LiveRecording({ recording, onToggle, disabled = false }) {
   const { theme } = useSettings();
 
   const handlePress = async () => {
-    // 2. 'disabled' 상태이거나, (녹음 중이 아닐 때) 버튼 클릭 방지
+    // 세션 준비 중에는 버튼 잠시 비활성화
     if (disabled && !recording) {
       console.log('Button is disabled (session loading), ignoring press.');
       return;
     }
 
-    // 이미 녹음 중(분석 중지)일 경우, 권한 체크 없이 onToggle만 실행
-    // (disabled 여부와 상관없이 '중지'는 가능해야 함)
+    // 이미 녹음 중이면 그냥 중지
     if (recording) {
       onToggle();
       return;
     }
 
-    // --- 이하 녹음 시작일 경우 권한 체크 (기존 코드 동일) ---
-    const permission = await Audio.getPermissionsAsync();
+    // 녹음 시작 시 권한 확인
+    try {
+      console.log('마이크 권한 상태 확인 및 요청 중...');
+      const permission = await requestRecordingPermissionsAsync();
+      const { granted, canAskAgain, status } = permission || {};
 
-    if (permission.granted) {
-      console.log('마이크 권한이 허용되어 있습니다.');
-      onToggle();
-    } else if (permission.canAskAgain) {
-      console.log('마이크 권한을 요청합니다.');
-      const { status } = await Audio.requestPermissionsAsync();
-      
-      if (status === 'granted') {
-        console.log('마이크 권한이 허용되었습니다.');
+      if (granted) {
+        console.log('마이크 권한이 허용되어 있습니다. (status:', status, ')');
         onToggle();
-      } else {
-        Alert.alert('권한 거부', '마이크 권한이 거부되었습니다.');
+        return;
       }
-    } else {
+
+      // 한 번 더 물어볼 수 없는 상태 (사용자가 "다시는 묻지 않기" 등으로 막은 경우)
+      if (!granted && canAskAgain === false) {
+        Alert.alert(
+          '마이크 권한 필요',
+          '실시간 분석을 위해 마이크 권한이 필요합니다. 앱 설정에서 권한을 허용해주세요.',
+          [
+            { text: '취소', style: 'cancel' },
+            { text: '설정으로 이동', onPress: () => Linking.openSettings() },
+          ]
+        );
+        return;
+      }
+
+      // 그 외(거부 등)
+      Alert.alert('권한 거부', '마이크 권한이 거부되었습니다.');
+    } catch (err) {
+      console.error('마이크 권한 확인 중 치명적 오류 발생:', err);
       Alert.alert(
-        '마이크 권한 필요',
-        '실시간 분석을 위해 마이크 권한이 필요합니다. 앱 설정에서 권한을 허용해주세요.',
-        [
-          { text: '취소', style: 'cancel' },
-          { text: '설정으로 이동', onPress: () => Linking.openSettings() },
-        ]
+        '오류 발생',
+        `마이크 권한을 확인하는 중 오류가 발생했습니다: ${err?.message ?? '알 수 없는 오류'}`
       );
     }
   };
@@ -60,13 +66,11 @@ export default function LiveRecording({ recording, onToggle, disabled = false })
     <View style={styles.footer}>
       <Pressable
         onPress={handlePress}
-        // 3. Pressable 자체에도 disabled prop 전달 (터치 효과 등 제어)
-        disabled={disabled && !recording} 
+        disabled={disabled && !recording}
         style={[
           styles.button,
           recording ? styles.buttonStop : styles.buttonStart,
-          // 4. 비활성화 상태일 때 시각적 스타일 적용
-          (disabled && !recording) && styles.buttonDisabled, 
+          disabled && !recording && styles.buttonDisabled,
           { shadowColor: theme.colors.text },
         ]}
       >
@@ -85,8 +89,11 @@ export default function LiveRecording({ recording, onToggle, disabled = false })
             color: '#fff',
           }}
         >
-          {/* 5. 세션 로딩 중일 때 텍스트 변경 (선택 사항) */}
-          {disabled && !recording ? '세션 준비 중...' : (recording ? '분석 중지' : '실시간 분석 시작')}
+          {disabled && !recording
+            ? '세션 준비 중...'
+            : recording
+            ? '분석 중지'
+            : '실시간 분석 시작'}
         </Text>
       </Pressable>
     </View>
@@ -113,11 +120,14 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
   },
-  buttonStart: { backgroundColor: '#635bff' }, // 시작(보라색)
-  buttonStop: { backgroundColor: '#ef4444' }, // 중지(빨강)
-  // 6. 비활성화 시 스타일 추가
+  buttonStart: {
+    backgroundColor: '#635bff',
+  },
+  buttonStop: {
+    backgroundColor: '#ef4444',
+  },
   buttonDisabled: {
-    backgroundColor: '#b0b0b0', // 회색
+    backgroundColor: '#b0b0b0',
   },
   icon: {
     width: 16,
