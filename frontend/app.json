@@ -20,18 +20,35 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.anonymous.frontend"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "실시간 안내방송을 인식하기 위해 마이크 접근 권한이 필요합니다."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#ffffff"
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2f74f23a-f660-4c0e-bae0-b124fb0c1323"
+      }
+    }
   }
 }

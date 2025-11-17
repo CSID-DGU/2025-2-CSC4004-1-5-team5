@@ -1,4 +1,3 @@
-// screens/SettingsScreen.js
 import { useState } from 'react';
 import {
   StyleSheet,
@@ -7,43 +6,100 @@ import {
   Pressable,
   Image,
   ScrollView,
+  Alert,
+  Linking,
+  Platform,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { useSettings } from '../context/SettingsContext';
+
+// 알림 핸들러 설정 (앱 실행 중에도 알림 표시)
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+// 테스트 알림 전송 함수
+async function scheduleTestNotification() {
+  console.log('테스트 알림을 1초 후에 전송합니다...');
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "🔔 알림 테스트",
+      body: "알림 권한이 성공적으로 설정되었습니다!",
+      sound: 'default',
+    },
+    trigger: { seconds: 1 },
+  });
+}
 
 export default function SettingsScreen({ onClose }) {
   const { settings, apply, theme } = useSettings();
 
-  // ── 슬라이더/디텐트 설정 ───────────────────────────────
+  // (슬라이더 관련 state - 기존 코드)
   const [barW, setBarW] = useState(1);
   const [detentLatched, setDetentLatched] = useState(false);
-
-  const MIN = 50;
-  const MAX = 100;
-  const DETENT = 75;
-  const SNAP_EPS = 2;    // 75% ±2% 이내면 스냅
-  const UNLOCK_EPS = 6;  // 75%에서 ±6% 이상 벗어나야 잠금 해제
+  const MIN = 50, MAX = 100, DETENT = 75, SNAP_EPS = 2, UNLOCK_EPS = 6;
 
   const persist = (next) => apply(next);
-  const toggleAlerts = () =>
-    persist({ ...settings, alertsEnabled: !settings.alertsEnabled });
 
-  const toProgressPct = (val) => ((val - MIN) / (MAX - MIN)) * 100;
+  // ✅ (수정) 알림 활성화/권한 요청 함수
+  const toggleAlerts = async () => {
+    if (settings.alertsEnabled) {
+      persist({ ...settings, alertsEnabled: false });
+      console.log('알림이 비활성화되었습니다.');
+      return;
+    }
 
-  const mapXToValue = (x) => {
-    if (barW <= 0) return settings.fontScalePct;
-    const p = Math.max(0, Math.min(1, x / barW)); // 0~1
-    return Math.round(MIN + p * (MAX - MIN));     // 50~100
+    if (!Device.isDevice) {
+      Alert.alert('알림 테스트', '시뮬레이터에서는 알림 권한을 요청할 수 없습니다.');
+      persist({ ...settings, alertsEnabled: true }); // UI 토글만
+      return;
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      console.log('알림 권한을 요청합니다...');
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus === 'granted') {
+      console.log('알림 권한이 허용되었습니다.');
+      persist({ ...settings, alertsEnabled: true });
+      await scheduleTestNotification(); // 테스트 알림
+    } else {
+      console.log('알림 권한이 거부되었습니다.');
+      Alert.alert(
+        '알림 권한 필요',
+        '키워드 알림을 받으려면 앱 설정에서 권한을 허용해야 합니다.',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설정으로 이동', onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
   };
 
+  // (슬라이더 헬퍼 함수 - 기존 코드)
+  const toProgressPct = (val) => ((val - MIN) / (MAX - MIN)) * 100;
+  const mapXToValue = (x) => {
+    if (barW <= 0) return settings.fontScalePct;
+    const p = Math.max(0, Math.min(1, x / barW));
+    return Math.round(MIN + p * (MAX - MIN));
+  };
   const onGrant = (e) => {
     setDetentLatched(false);
     onMove(e);
   };
-
   const onMove = (e) => {
     const raw = mapXToValue(e.nativeEvent.locationX);
     const diffToDetent = Math.abs(raw - DETENT);
-
     if (!detentLatched && diffToDetent <= SNAP_EPS) {
       persist({ ...settings, fontScalePct: DETENT });
       setDetentLatched(true);
@@ -60,15 +116,14 @@ export default function SettingsScreen({ onClose }) {
     }
     persist({ ...settings, fontScalePct: raw });
   };
-
   const progressPct = toProgressPct(settings.fontScalePct);
-
   const selectContrast = (v) => persist({ ...settings, contrast: v });
   const selectWeight = (v) => persist({ ...settings, fontWeight: v });
 
+  // (return 문 - 기존 코드)
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.bg }]}>
-      {/* 상단 헤더 */}
+      {/* 헤더 */}
       <View style={[styles.header, { borderColor: theme.colors.line }]}>
         <Text style={[styles.headerTitle, t(theme, 16)]}>설정</Text>
         <Pressable onPress={onClose} hitSlop={10}>
@@ -79,7 +134,6 @@ export default function SettingsScreen({ onClose }) {
         </Pressable>
       </View>
 
-      {/* 스크롤 가능한 본문 */}
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -87,14 +141,12 @@ export default function SettingsScreen({ onClose }) {
         {/* 알림 설정 */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <View style={styles.cardTitleRow}>
-            {/* ✅ 추가: 알림 아이콘 */}
             <Image
               source={require('../assets/alarm.png')}
               style={styles.leadImg}
             />
             <Text style={[styles.cardTitle, t(theme, 16)]}>알림 설정</Text>
           </View>
-
           <View style={styles.rowBetween}>
             <View>
               <Text style={[styles.label, t(theme, 13)]}>알림 활성화</Text>
@@ -104,7 +156,6 @@ export default function SettingsScreen({ onClose }) {
             </View>
             <SwitchLike on={settings.alertsEnabled} onPress={toggleAlerts} />
           </View>
-
           <View style={styles.tipBox}>
             <Text style={[styles.tipText, ts(theme, 12)]}>
               💡 알림을 받으려면 등록된 키워드가 안내방송에 포함되어야 합니다.
@@ -112,22 +163,20 @@ export default function SettingsScreen({ onClose }) {
           </View>
         </View>
 
-        {/* 접근성 설정 */}
+        {/* 접근성 설정 (기존 코드와 동일) */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <View style={styles.cardTitleRow}>
-            {/* ✅ 추가: 접근성 아이콘 */}
             <Image
               source={require('../assets/Accessibility.png')}
               style={styles.leadImg}
             />
             <Text style={[styles.cardTitle, t(theme, 16)]}>접근성 설정</Text>
           </View>
-
-          <Text style={[styles.descText, ts(theme, 12)]}>
+          {/* ... (이하 접근성 설정 UI) ... */}
+           <Text style={[styles.descText, ts(theme, 12)]}>
             화면 표시를 개인 선호도에 맞게 조정합니다.
           </Text>
-
-          {/* 글자 크기 (50~100, 75에서 디텐트) */}
+          {/* 글자 크기 */}
           <View style={{ marginTop: 10 }}>
             <View style={styles.rowBetween}>
               <Text style={[styles.label, t(theme, 13)]}>글자 크기</Text>
@@ -135,7 +184,6 @@ export default function SettingsScreen({ onClose }) {
                 {settings.fontScalePct}%
               </Text>
             </View>
-
             <View
               style={styles.slider}
               onLayout={(e) => setBarW(e.nativeEvent.layout.width)}
@@ -146,37 +194,34 @@ export default function SettingsScreen({ onClose }) {
               <View style={[styles.sliderFill, { width: `${progressPct}%` }]} />
               <View style={[styles.sliderKnob, { left: `${progressPct}%` }]} />
             </View>
-
             <View style={styles.sliderLabels}>
               <Text style={[styles.sliderLabelText, ts(theme, 11)]}>작게</Text>
               <Text style={[styles.sliderLabelText, ts(theme, 11)]}>보통</Text>
               <Text style={[styles.sliderLabelText, ts(theme, 11)]}>크게</Text>
             </View>
           </View>
-
           {/* 색상 대비 */}
           <View style={{ marginTop: 18 }}>
             <Text style={[styles.label, t(theme, 13)]}>색상 대비</Text>
             <RadioRow
-              label="낮음  부드러운 색상"
+              label="낮음  부드러운 색상"
               selected={settings.contrast === 'low'}
               onPress={() => selectContrast('low')}
               theme={theme}
             />
             <RadioRow
-              label="보통  기본 설정"
+              label="보통  기본 설정"
               selected={settings.contrast === 'normal'}
               onPress={() => selectContrast('normal')}
               theme={theme}
             />
             <RadioRow
-              label="높음  선명한 색상"
+              label="높음  선명한 색상"
               selected={settings.contrast === 'high'}
               onPress={() => selectContrast('high')}
               theme={theme}
             />
           </View>
-
           {/* 글꼴 굵기 */}
           <View style={{ marginTop: 18 }}>
             <Text style={[styles.label, t(theme, 13)]}>글꼴 굵기</Text>
@@ -199,7 +244,6 @@ export default function SettingsScreen({ onClose }) {
               theme={theme}
             />
           </View>
-
           <View style={[styles.tipBox, { marginTop: 16 }]}>
             <Text style={[styles.tipText, ts(theme, 12)]}>
               💡 설정은 자동으로 저장되며 앱을 다시 열어도 유지됩니다.
@@ -211,7 +255,7 @@ export default function SettingsScreen({ onClose }) {
   );
 }
 
-/* 스위치 (커스텀) */
+// (헬퍼 컴포넌트 및 스타일 - 기존 코드)
 function SwitchLike({ on, onPress }) {
   return (
     <Pressable onPress={onPress} style={[styles.switch, on && styles.switchOn]}>
@@ -219,8 +263,6 @@ function SwitchLike({ on, onPress }) {
     </Pressable>
   );
 }
-
-/* 라디오 행 */
 function RadioRow({ label, selected, onPress, theme }) {
   return (
     <Pressable
@@ -234,8 +276,6 @@ function RadioRow({ label, selected, onPress, theme }) {
     </Pressable>
   );
 }
-
-/* 글꼴/색 테마 헬퍼 */
 const t = (theme, base) => ({
   fontSize: Math.round(base * theme.scale),
   fontWeight: theme.weight,
@@ -245,10 +285,8 @@ const ts = (theme, base) => ({
   fontSize: Math.round(base * theme.scale),
   color: theme.colors.sub,
 });
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
-
   header: {
     height: 56,
     paddingHorizontal: 16,
@@ -260,9 +298,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontWeight: '700' },
   headerIcon: { width: 45, height: 45, tintColor: '#6b7280' },
-
   content: { padding: 16, gap: 16 },
-
   card: {
     borderRadius: 14,
     padding: 14,
@@ -273,26 +309,19 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  // ✅ 추가: 타이틀 왼쪽 아이콘 스타일
   leadImg: { width: 20, height: 20, resizeMode: 'contain' },
-
   cardTitle: { fontWeight: '700' },
-
   rowBetween: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-
   label: { fontWeight: '700' },
   helpText: {},
   valueText: {},
   descText: {},
-
   tipBox: { backgroundColor: '#EEF6FF', borderRadius: 10, padding: 10 },
   tipText: {},
-
-  // 스위치
   switch: {
     width: 48,
     height: 28,
@@ -310,8 +339,6 @@ const styles = StyleSheet.create({
     transform: [{ translateX: 0 }],
   },
   knobOn: { transform: [{ translateX: 20 }] },
-
-  // 슬라이더
   slider: {
     height: 24,
     borderRadius: 999,
@@ -345,8 +372,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   sliderLabelText: {},
-
-  // 라디오
   radioRow: {
     flexDirection: 'row',
     alignItems: 'center',
