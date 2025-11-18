@@ -14,13 +14,13 @@ redis==7.0.1
 # ==========================
 # AI: PyTorch + Whisper
 # ==========================
-numpy==2.3.5
-torch==2.9.1
-torchaudio==2.9.1
+numpy
+torch==2.4.0
+torchaudio==2.4.0
 openai-whisper==20250625
 numba==0.62.1
 llvmlite==0.45.1
-soundfile
+soundfile==0.13.1
 librosa
 
 # ==========================
@@ -44,8 +44,12 @@ certifi
 typing-extensions
 
 # ==========================
+# Other dependencies
+# ==========================
 django-celery-beat==2.8.1
 drf-yasg==1.21.11
 asteroid==0.7.0
 django-environ==0.4.5
 gunicorn==22.0.0
+certifi==2024.8.30
+
