@@ -25,21 +25,21 @@ class SessionStatusSerializer(serializers.ModelSerializer):
 
 
 class AudioUploadSerializer(serializers.Serializer):
-    session_id = serializers.UUIDField()
+    session_id = serializers.IntegerField()
     audio_file = serializers.FileField()
-    duration = serializers.FloatField(required=False)
 
-    def validate_session_id(self, value):
+    def validate(self, data):
+        from recordings.models import Session
+        session_id = data["session_id"]
+
         try:
-            session = Session.objects.get(id=value)
+            data["session"] = Session.objects.get(id=session_id)
         except Session.DoesNotExist:
-            raise serializers.ValidationError("세션 없음")
-        return session
+            raise serializers.ValidationError("Invalid session_id")
 
-    def validate(self, attrs):
-        attrs["session"] = attrs["session_id"]
-        del attrs["session_id"]
-        return attrs
+        return data
+
+
 
 
 class BroadcastSerializer(serializers.ModelSerializer):
