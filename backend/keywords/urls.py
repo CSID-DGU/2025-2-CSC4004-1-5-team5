@@ -3,6 +3,6 @@ from .views import KeywordViewSet
 
 app_name = "keywords"
 router = DefaultRouter()
-router.register(r"", KeywordViewSet, basename="keywords")
+router.register(r"recordings", KeywordViewSet, basename="keywords")
 
 urlpatterns = router.urls
