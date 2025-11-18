@@ -162,10 +162,7 @@ CORS_ALLOW_ORIGINS = [
 
 #######################################################
 CELERY_BEAT_SCHEDULE = {
-    "test-task": {
-        "task": "project.tasks.test_task",
-        "schedule": 60.0,  # 60초마다 실행 (테스트용)
-    },
+    
 }
 
 
@@ -178,3 +175,13 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "Asia/Seoul"
+
+CELERY_TASK_TIME_LIMIT = 600      # hard timeout 10분
+CELERY_TASK_SOFT_TIME_LIMIT = 540  # soft timeout 9분
+
+#########################################################
+# Colab 서버 URL
+COLAB_SERVER_URL = "https://flossie-unquotable-savoringly.ngrok-free.dev"
+
+AI_URL = "http://127.0.0.1:5000/enhance_stt"
+#########################################################
