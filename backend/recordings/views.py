@@ -9,9 +9,12 @@ from .serializers import SessionSerializer, AudioUploadSerializer, ResultSeriali
 
 from django.shortcuts import get_object_or_404
 
-from celery_task.audio_pipeline import process_audio_chunk
+from .task import process_audio_chunk
+
+import torchaudio
 
 
+from django.core.files.storage import FileSystemStorage
 
 # 세션 관리 (실시간 분석 시작 시 생성)
 class SessionViewSet(viewsets.ViewSet):
@@ -56,41 +59,49 @@ class SessionViewSet(viewsets.ViewSet):
             status=status.HTTP_200_OK, 
         )
         
+################################################################################
+# AudioChunk 업로드 및 처리 시작    
 class AudioChunkViewSet(viewsets.ViewSet):
-    """
-    [POST] /api/recordings/audio/ → AudioChunk 업로드
-    """
-
     def create(self, request):
         serializer = AudioUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         session = serializer.validated_data["session"]
         audio_file = serializer.validated_data["audio_file"]
-        duration = serializer.validated_data.get("duration")
 
+        # -----------------------------
+        # 파일 저장
+        # -----------------------------
+        fs = FileSystemStorage(location="media/audio/")  # 실제 저장 폴더
+        saved_name = fs.save(audio_file.name, audio_file)
+        saved_path = fs.path(saved_name)  # 절대 경로 반환됨
+
+        # -----------------------------
+        # AudioChunk DB 생성
+        # -----------------------------
         chunk = AudioChunk.objects.create(
             session=session,
-            file_path=audio_file,
-            duration=duration,
+            file_path=saved_path,   # 절대경로 저장
             status="PENDING",
         )
 
+        # Celery 비동기 실행
         process_audio_chunk.delay(chunk.id)
 
         return Response(
             {
                 "audio_id": chunk.id,
                 "status": "PROCESSING",
-                "message": "Audio uploaded. STT pipeline started.",
+                "file": saved_name,
             },
-            status=status.HTTP_201_CREATED,
+            status=201,
         )
 
-
+################################################################################
+# 세션 상태 및 결과 조회
 class SessionStatusViewSet(viewsets.ViewSet):
     """
-    [GET] /api/recordings/session/{id}/status/
+    [GET] /api/session/{id}/status/
     """
 
 def retrieve(self, request, pk=None):
@@ -127,7 +138,7 @@ def retrieve(self, request, pk=None):
 
 class SessionResultViewSet(viewsets.ViewSet):
     """
-    [GET] /api/recordings/session/{id}/results/
+    [GET] /api/session/{id}/results/
     """
 
     def retrieve(self, request, pk=None):
@@ -135,3 +146,4 @@ class SessionResultViewSet(viewsets.ViewSet):
 
         serializer = ResultSerializer(session)
         return Response(serializer.data)
+
