@@ -52,8 +52,9 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_yasg',
     
-    'recordings',
-    'keywords',
+    'apps.recordings',
+    'apps.keywords',
+    'apps.broadcasts',
     
 ]
 
@@ -181,7 +182,6 @@ CELERY_TASK_SOFT_TIME_LIMIT = 540  # soft timeout 9분
 
 #########################################################
 # Colab 서버 URL
-COLAB_SERVER_URL = "https://flossie-unquotable-savoringly.ngrok-free.dev"
-
-AI_URL = "http://127.0.0.1:5000/enhance_stt"
+COLAB_SERVER_URL = env('COLAB_SERVER_URL')
+AI_SERVER_URL = env('AI_SERVER_URL')
 #########################################################
