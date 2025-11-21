@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import Session, AudioChunk, Broadcast
-from keywords.models import Alert
+from .models import Session, AudioChunk
+from apps.broadcasts.models import Broadcast
+from apps.keywords.models import Alert
 
 
 class SessionSerializer(serializers.ModelSerializer):
@@ -10,8 +11,7 @@ class SessionSerializer(serializers.ModelSerializer):
 
 
 class SessionStatusSerializer(serializers.ModelSerializer):
-    total_broadcasts = serializers.IntegerField(source="broadcast_set.count", read_only=True)
-    total_keywords = serializers.IntegerField(source="alert_set.count", read_only=True)
+    total_broadcasts = serializers.IntegerField(source="broadcasts.count", read_only=True)
 
     class Meta:
         model = Session
@@ -20,8 +20,8 @@ class SessionStatusSerializer(serializers.ModelSerializer):
             "status",
             "progress",
             "total_broadcasts",
-            "total_keywords"
         ]
+
 
 
 class AudioUploadSerializer(serializers.Serializer):
@@ -29,7 +29,7 @@ class AudioUploadSerializer(serializers.Serializer):
     audio_file = serializers.FileField()
 
     def validate(self, data):
-        from recordings.models import Session
+        from apps.recordings.models import Session
         session_id = data["session_id"]
 
         try:
@@ -58,7 +58,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
 
 
 class ResultSerializer(serializers.ModelSerializer):
-    timeline = BroadcastSerializer(source="broadcast_set", many=True)
+    timeline = BroadcastSerializer(source="broadcasts", many=True)
 
     class Meta:
         model = Session

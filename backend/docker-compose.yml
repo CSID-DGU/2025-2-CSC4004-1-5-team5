@@ -44,6 +44,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: project.settings
     mem_limit: 16g     # Whisper large 필수 메모리
+    restart: always
 
   beat:
     build: .
@@ -57,3 +58,4 @@ services:
     volumes:
       - .:/app
       - whisper_cache:/root/.cache/whisper
+    restart: always

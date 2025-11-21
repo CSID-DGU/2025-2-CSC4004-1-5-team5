@@ -1,19 +1,18 @@
-from django.urls import path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     SessionViewSet,
     AudioChunkViewSet,
-    SessionStatusViewSet,
-    SessionResultViewSet
 )
+from .sse.stream import session_event_stream
 
 app_name = "recordings"
 
 router = DefaultRouter()
-
 router.register(r"session", SessionViewSet, basename="session")
 router.register(r"audio", AudioChunkViewSet, basename="audio")
-router.register(r"session-status", SessionStatusViewSet, basename="session-status")
-router.register(r"results", SessionResultViewSet, basename="session-results")
 
-urlpatterns = router.urls
+urlpatterns = [
+    # 기본 REST 라우터
+    path("", include(router.urls)),
+]

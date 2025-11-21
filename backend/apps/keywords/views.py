@@ -2,8 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from .models import Keyword
-from .serializers import KeywordSerializer
-from recordings.models import Session
+from apps.recordings.models import Session
 
 # Create your views here.
 from rest_framework import viewsets, status
@@ -12,7 +11,7 @@ from django.shortcuts import get_object_or_404
 
 from .models import Keyword
 from .serializers import KeywordCreateSerializer, KeywordListSerializer
-from recordings.models import Session
+from apps.recordings.models import Session
 
 
 class KeywordViewSet(viewsets.ViewSet):

@@ -1,5 +1,6 @@
 from django.db import models
-from recordings.models import Session, Broadcast
+from apps.recordings.models import Session
+from apps.broadcasts.models import Broadcast
 
 
 # ==========================================================
