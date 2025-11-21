@@ -52,4 +52,5 @@ asteroid==0.7.0
 django-environ==0.4.5
 gunicorn==22.0.0
 certifi==2024.8.30
+requests==2.31.0
 
