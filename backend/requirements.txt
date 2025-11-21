@@ -10,10 +10,7 @@ django-cors-headers
 # ==========================
 celery==5.5.3
 redis==7.0.1
-# ==========================
-# AI: PyTorch + Whisper
-# ==========================
-numpy
+
 # ==========================
 # LLM + API Client
 # ==========================
@@ -22,23 +19,24 @@ tiktoken==0.12.0
 httpx==0.28.1
 
 # ==========================
-# Media / Utils
+# Utils
 # ==========================
-pillow==12.0.0
 python-dotenv==1.0.1
-requests==2.32.5
-certifi
+django-environ==0.4.5
+requests==2.31.0
+certifi==2024.8.30
+
 # ==========================
-# Dependencies auto-required
+# Docs
 # ==========================
-typing-extensions
+drf-yasg==1.21.11
+
 # ==========================
-# Other dependencies
+# Async Tasks
 # ==========================
 django-celery-beat==2.8.1
-drf-yasg==1.21.11
-django-environ==0.4.5
-gunicorn==22.0.0
-certifi==2024.8.30
-requests==2.31.0
 
+# ==========================
+# WSGI
+# ==========================
+gunicorn==22.0.0
