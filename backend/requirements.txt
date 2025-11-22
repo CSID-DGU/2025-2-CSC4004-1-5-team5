@@ -4,6 +4,7 @@
 Django==5.1.7
 djangorestframework==3.16.1
 django-cors-headers
+django-eventstream
 
 # ==========================
 # Celery + Redis
