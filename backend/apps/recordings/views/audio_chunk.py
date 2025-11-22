@@ -4,7 +4,7 @@ from django.core.files.storage import FileSystemStorage
 
 from apps.recordings.models import AudioChunk
 from apps.recordings.serializers.serializers import AudioUploadSerializer
-from apps.recordings.task import process_audio_chunk
+from apps.recordings.tasks import process_audio_chunk
 
 
 # ========================================================

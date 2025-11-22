@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
+    "django_eventstream",
     'django_celery_beat',
     
     'rest_framework',
@@ -191,3 +192,7 @@ CELERY_TASK_SOFT_TIME_LIMIT = 540  # soft timeout 9분
 AI_SERVER_URL = env('AI_SERVER_URL')
 COLAB_SERVER_URL = env('COLAB_SERVER_URL', default="")
 #########################################################
+# Django EventStream 설정
+EVENTSTREAM_REDIS_HOST = "redis"
+EVENTSTREAM_REDIS_PORT = 6379
+############################################################
