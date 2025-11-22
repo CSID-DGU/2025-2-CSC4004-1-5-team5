@@ -182,6 +182,6 @@ CELERY_TASK_SOFT_TIME_LIMIT = 540  # soft timeout 9분
 
 #########################################################
 # Colab 서버 URL
-COLAB_SERVER_URL = env('COLAB_SERVER_URL')
 AI_SERVER_URL = env('AI_SERVER_URL')
+COLAB_SERVER_URL = env('COLAB_SERVER_URL', default="")
 #########################################################
