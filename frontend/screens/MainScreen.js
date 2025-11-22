@@ -54,11 +54,17 @@ async function scheduleTestNotification() {
   });
 }
 
-const CHUNK_DURATION_MS = 10000;
+const CHUNK_DURATION_MS = 10000;  // 10초
+const MAX_RECORDING_MS = 90000;   // 1분 30초
 
 export default function MainScreen() {
   const { theme, settings, apply } = useSettings();
-  const { sessionId, resetSession, loading: sessionLoading } = useSession();
+  const {
+    sessionId,
+    resetSession,
+    loading: sessionLoading,
+    uploadAudioChunk, // ✅ SessionContext에서 가져온 청크 업로드 함수
+  } = useSession();
 
   const [route, setRoute] = useState('home');
   const [tab, setTab] = useState('realtime');
@@ -69,6 +75,15 @@ export default function MainScreen() {
 
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const intervalRef = useRef(null);
+
+  // 누적 녹음 시간 (1분 30초 제한용)
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const elapsedRef = useRef(0);
+  const recordingRef = useRef(false);
+
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
 
   const paddings = useMemo(
     () => ({
@@ -147,15 +162,44 @@ export default function MainScreen() {
     }
   };
 
-  const stopAndSaveChunk = async () => {
+  const stopAndSaveChunk = async (durationSec = 10) => {
     try {
-      console.log('이전 10초 청크 저장 중...');
+      console.log('이전 10초 청크 저장/업로드 중...');
       await audioRecorder.stop();
       const uri = audioRecorder.uri;
       console.log('10초 청크 저장 완료:', uri);
+      await uploadAudioChunk(uri, durationSec);
     } catch (error) {
-      console.error('청크 저장 실패:', error);
+      console.error('청크 저장/업로드 실패:', error);
     }
+  };
+
+  const handleAutoStopAtLimit = () => {
+    console.log('최대 녹음 시간(1분 30초) 도달, 자동 종료');
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    setRecording(false);
+    recordingRef.current = false;
+
+    Alert.alert(
+      '녹음 시간이 제한되었습니다',
+      '실시간 분석 품질을 위해 한 번에 최대 1분 30초까지만 사용할 수 있습니다.\n\n' +
+        '지금까지 녹음한 내용을 기준으로 결과 화면으로 이동하시겠습니까?',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '결과 보기',
+          onPress: () => {
+            // 탭을 결과(방송 내역) 쪽으로 이동
+            setTab('history'); // RealtimeHistoryTabs에서 사용하는 실제 값에 맞게 조정
+          },
+        },
+      ],
+    );
   };
 
   const toggleRecording = async () => {
@@ -163,6 +207,7 @@ export default function MainScreen() {
     if (recording) {
       console.log('전체 녹음을 중지합니다...');
       setRecording(false);
+      recordingRef.current = false;
 
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -170,19 +215,24 @@ export default function MainScreen() {
       }
 
       try {
+        // 마지막 청크도 서버로 전송 (길이는 서버에서 계산)
         await audioRecorder.stop();
         const uri = audioRecorder.uri;
         console.log('마지막 청크 저장 완료:', uri);
+        await uploadAudioChunk(uri, null);
 
+        // 필요하면 공유 (디버깅용)
         if (uri && (await Sharing.isAvailableAsync())) {
           await Sharing.shareAsync(uri);
         }
 
         console.log('녹음 종료됨. 새 세션으로 교체를 요청합니다...');
-        // 여기서 keywords는 word(string) 배열만 넘어감
         await resetSession(keywords);
+
+        elapsedRef.current = 0;
+        setElapsedMs(0);
       } catch (error) {
-        console.error('마지막 청크 중지/저장 또는 세션 리셋 실패:', error);
+        console.error('마지막 청크 중지/업로드 또는 세션 리셋 실패:', error);
       }
       return;
     }
@@ -199,12 +249,26 @@ export default function MainScreen() {
 
     console.log(`[Session: ${sessionId}] 10초 단위 청크 녹음을 시작합니다...`);
     setRecording(true);
+    recordingRef.current = true;
+    elapsedRef.current = 0;
+    setElapsedMs(0);
 
     await startNewChunk();
 
+    // 10초마다: 이전 청크 stop+업로드 → 누적 시간 증가 → 한도 확인 → 새 청크 시작
     intervalRef.current = setInterval(async () => {
-      await stopAndSaveChunk();
-      await startNewChunk();
+      if (!recordingRef.current) return;
+
+      await stopAndSaveChunk(10);
+
+      elapsedRef.current += CHUNK_DURATION_MS;
+      setElapsedMs(elapsedRef.current);
+
+      if (elapsedRef.current >= MAX_RECORDING_MS) {
+        handleAutoStopAtLimit();
+      } else {
+        await startNewChunk();
+      }
     }, CHUNK_DURATION_MS);
   };
 
@@ -256,7 +320,6 @@ export default function MainScreen() {
               </View>
             </View>
 
-            {/* 여기서 sessionId를 prop으로 넘길 필요 없음 */}
             <Keywords onChange={setKeywords} />
 
             {recording && <ListeningStatus />}

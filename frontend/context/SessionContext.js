@@ -5,8 +5,9 @@ import React, {
   useContext,
   useEffect,
   useState,
+  useCallback,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // 추가됨
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "../api/instance";
 
 const SessionContext = createContext(null);
@@ -40,16 +41,16 @@ async function cleanupOldSessions() {
 
     console.log(`[Session] 이전 세션 ${history.length}개 삭제 시도 중...`);
 
-    // 병렬로 삭제 요청 전송
     const deletePromises = history.map((id) =>
       api.delete(`/session/${id}/`).catch((err) => {
-        console.log(`[Session] 세션 ${id} 삭제 실패 (이미 만료됐을 수 있음)`);
+        console.log(
+          `[Session] 세션 ${id} 삭제 실패 (이미 만료됐을 수 있음)`
+        );
       })
     );
 
     await Promise.allSettled(deletePromises);
 
-    // 청소 완료 후 목록 초기화
     await AsyncStorage.removeItem(SESSION_HISTORY_KEY);
     console.log("[Session] 이전 세션 정리 완료");
   } catch (e) {
@@ -74,7 +75,7 @@ async function createNewSession(previousSessionId = null) {
   }
 
   const res = await api.post(endpoint, payload);
-  
+
   const rawId = res.data.id ?? res.data.session_id;
   if (rawId === undefined || rawId === null) {
     throw new Error("세션 ID를 응답에서 찾을 수 없습니다.");
@@ -83,7 +84,6 @@ async function createNewSession(previousSessionId = null) {
   const newId = String(rawId);
   console.log("[Session] 새 세션 ID:", newId);
 
-  // ✅ 생성된 세션 ID를 로컬 저장소에 기록
   await addSessionIdToHistory(newId);
 
   return newId;
@@ -94,14 +94,13 @@ export function SessionProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // 1. 앱 시작 시: 이전 세션 청소 후 -> 새 세션 생성
+  // 앱 시작 시: 이전 세션 정리 후 새 세션 생성
   useEffect(() => {
     const initSession = async () => {
       try {
         setLoading(true);
         console.log("====================================");
-        
-        // ✅ 1-1. 이전 실행 때 남은 세션들 삭제 (청소)
+
         await cleanupOldSessions();
 
         console.log("[Session] 앱 시작, 새 세션 초기화 시작");
@@ -123,7 +122,7 @@ export function SessionProvider({ children }) {
     initSession();
   }, []);
 
-  // 2. 세션 교체 함수
+  // 세션 교체 함수
   const resetSession = async (keywordsToTransfer = []) => {
     setLoading(true);
     setError(null);
@@ -132,12 +131,10 @@ export function SessionProvider({ children }) {
       const oldSessionId = sessionId;
       console.log("[Session] 세션 교체 시작 (이전 ID:", oldSessionId, ")");
 
-      // 새 세션 생성 (여기서도 내부적으로 addSessionIdToHistory가 호출됨)
       const newId = await createNewSession(oldSessionId);
 
       console.log("[Session] 새 세션으로 교체 완료, New ID:", newId);
 
-      // 키워드 재등록 로직
       if (keywordsToTransfer.length > 0) {
         console.log(
           `[Session] ${keywordsToTransfer.length}개의 키워드를 새 세션(${newId})에 재등록합니다.`
@@ -168,11 +165,64 @@ export function SessionProvider({ children }) {
     }
   };
 
+  /**
+   * ✅ 오디오 청크 업로드 (/audio/)
+   * - fileUri: expo-audio로 녹음된 파일 URI
+   * - durationSec: 선택, 초 단위 길이 (10초 청크면 10, 모르면 null)
+   */
+  const uploadAudioChunk = useCallback(
+    async (fileUri, durationSec = null) => {
+      if (!fileUri) {
+        console.log("[Session] 업로드할 파일 URI가 없습니다.");
+        return;
+      }
+      if (!sessionId) {
+        console.warn("[Session] sessionId 없음, 청크 업로드 스킵");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("session_id", Number(sessionId));
+      if (durationSec != null) {
+        formData.append("duration", durationSec);
+      }
+      formData.append("audio_file", {
+        uri: fileUri,
+        type: "audio/m4a", // expo-audio 기본 포맷(m4a)에 맞춤
+        name: `chunk_${Date.now()}.m4a`,
+      });
+
+      console.log("[Session] 청크 업로드 시작:", {
+        sessionId,
+        durationSec,
+        fileUri,
+      });
+
+      try {
+        const res = await api.post("/audio/", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+        console.log("[Session] 청크 업로드 완료:", res.data);
+        return res.data;
+      } catch (e) {
+        console.error(
+          "[Session] 청크 업로드 실패:",
+          e?.response?.data ?? e.message
+        );
+        throw e;
+      }
+    },
+    [sessionId]
+  );
+
   const value = {
     sessionId,
     loading,
     error,
     resetSession,
+    uploadAudioChunk,
   };
 
   return (
