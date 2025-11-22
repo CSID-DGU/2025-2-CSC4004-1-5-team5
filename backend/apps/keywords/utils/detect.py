@@ -16,37 +16,16 @@ def normalize(text: str) -> str:
     return text.strip()
 
 
-def detect_keywords(broadcast):
-    """
-    broadcast.full_text 안에서 session 키워드 감지 후 Alert 생성.
-    중복 Alert 방지 포함.
-    """
-    session = broadcast.session
-    text = normalize(broadcast.full_text)
+def detect_keywords_in_chunk(session, text):
+    norm = normalize(text)
+    detected = []
 
-    detected_keywords = []
+    for kw in Keyword.objects.filter(session=session):
+        if normalize(kw.word) in norm:
+            detected.append(kw)
+            push_event(session.id, {
+                "type": "keyword_alert",
+                "keyword": kw.word
+            })
 
-    # 세션에 등록된 키워드 전체 검색
-    for keyword in Keyword.objects.filter(session=session):
-        kw_normalized = normalize(keyword.word)
-
-        # 부분 매칭 (예: "지연됩니다" 안에 "지연" 감지)
-        if kw_normalized in text:
-
-            # 중복 Alert 방지
-            if not Alert.objects.filter(keyword=keyword, broadcast=broadcast).exists():
-                alert = Alert.objects.create(
-                    keyword=keyword,
-                    broadcast=broadcast
-                )
-                detected_keywords.append(alert)
-
-                # SSE push
-                push_event(session.id, {
-                    "type": "keyword_alert",
-                    "keyword": keyword.word,
-                    "broadcast_id": broadcast.id,
-                    "detected_at": str(alert.detected_at),
-                })
-
-    return detected_keywords
+    return detected
