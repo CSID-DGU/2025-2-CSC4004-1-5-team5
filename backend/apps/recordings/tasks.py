@@ -38,7 +38,7 @@ def process_audio_chunk(chunk_id):
     return {
         "text": text,
         "is_broadcast": True,
-        "detected_keywords": [a.keyword.word for a in detected]
+        "detected_keywords": [a.word.word for a in detected]
     }
 
 
