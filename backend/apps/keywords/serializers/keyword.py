@@ -9,10 +9,11 @@ from apps.recordings.models import Session
 
 class KeywordListSerializer(serializers.ModelSerializer):
     session_id = serializers.IntegerField(source="session.id", read_only=True)
+    keyword = serializers.CharField(source='word')
 
     class Meta:
         model = Keyword
-        fields = ["id", "session_id", "word", "created_at"]
+        fields = ["id", "session_id", "keyword", "created_at"]
         read_only_fields = ["id", "session_id", "created_at"]
 
 
