@@ -70,7 +70,8 @@ export default function Keywords({ onChange }) {
     onChange?.(nextItems.map((i) => i.text));
   };
 
-  // 1. 키워드 조회 (GET /keywords/?session_id=...)
+  // 1. 키워드 조회
+  //    백엔드 스펙: GET /keywords/session/{session_id}/
   const fetchKeywords = async () => {
     if (!sessionId) {
       console.log('[Keywords] 세션 ID 없음, 서버 조회 건너뜀');
@@ -79,12 +80,11 @@ export default function Keywords({ onChange }) {
 
     try {
       console.log(
-        `[Keywords] 서버 키워드 조회: GET /keywords/?session_id=${sessionId}`,
+        `[Keywords] 서버 키워드 조회: GET /keywords/session/${sessionId}/`,
       );
 
-      const res = await api.get('/keywords/', {
-        params: { session_id: sessionId },
-      });
+      // ✅ 여기 URL만 변경
+      const res = await api.get(`/keywords/session/${sessionId}/`);
 
       console.log('[Keywords] 조회 status:', res.status);
       console.log(
@@ -209,9 +209,6 @@ export default function Keywords({ onChange }) {
         JSON.stringify(res.data, null, 2),
       );
 
-      // 삭제 후에도 서버 기준으로 다시 불러오고 싶다면:
-      // await fetchKeywords();
-      // 현재 방식대로 로컬에서만 제거하려면 아래 코드 유지
       const next = items.filter((it) => it.id !== id);
       emitChange(next);
     } catch (e) {

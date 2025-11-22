@@ -13,3 +13,11 @@ export const api = axios.create({
   },
   timeout: 10000,
 });
+api.interceptors.request.use((config) => {
+  console.log(
+    "[axios 요청]",
+    config.method?.toUpperCase(),
+    (config.baseURL || "") + (config.url || "")
+  );
+  return config;
+});

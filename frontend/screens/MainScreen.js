@@ -241,7 +241,7 @@ export default function MainScreen() {
               </View>
               <View style={styles.tipBox}>
                 <Text style={[styles.tipText, ts(theme, 12)]}>
-                  💡 등록된 키워드가 안내방송에 포함되면 알림이 옵니다.
+                  💡 알림이 켜져 있어야 등록된 키워드 감지 시 알림이 옵니다.
                 </Text>
               </View>
             </View>
