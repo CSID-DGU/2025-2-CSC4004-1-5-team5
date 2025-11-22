@@ -90,7 +90,8 @@ async function createNewSession(previousSessionId = null) {
 }
 
 export function SessionProvider({ children }) {
-  const [sessionId, setSessionId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);       // 현재 사용 중인 세션
+  const [lastSessionId, setLastSessionId] = useState(null); // 직전에 종료된 세션 (결과 조회용)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -108,6 +109,7 @@ export function SessionProvider({ children }) {
 
         console.log("[Session] 앱 시작, 새 세션 생성 완료, ID:", newId);
         setSessionId(newId);
+        setLastSessionId(null); // 처음에는 이전 세션 없음
         setError(null);
       } catch (e) {
         console.log("[Session] 초기 세션 생성 실패:", e);
@@ -122,7 +124,11 @@ export function SessionProvider({ children }) {
     initSession();
   }, []);
 
-  // 세션 교체 함수
+  /**
+   * 세션 교체 함수
+   * - oldSessionId → lastSessionId에 보관 (결과 조회에 사용)
+   * - sessionId → 새로 생성된 세션 ID로 교체
+   */
   const resetSession = async (keywordsToTransfer = []) => {
     setLoading(true);
     setError(null);
@@ -134,6 +140,11 @@ export function SessionProvider({ children }) {
       const newId = await createNewSession(oldSessionId);
 
       console.log("[Session] 새 세션으로 교체 완료, New ID:", newId);
+
+      // 방금 쓰던 세션을 "결과 조회용"으로 저장
+      if (oldSessionId) {
+        setLastSessionId(oldSessionId);
+      }
 
       if (keywordsToTransfer.length > 0) {
         console.log(
@@ -217,12 +228,56 @@ export function SessionProvider({ children }) {
     [sessionId]
   );
 
+  /**
+   * ✅ 세션 결과 조회 (/session/{id}/results/)
+   * - targetId가 있으면 해당 세션 ID로 조회
+   * - 없으면 lastSessionId → sessionId 순으로 사용
+   * * [수정 내역]
+   * 에러 발생 시 throw 하지 않고 null을 리턴하여,
+   * 호출부(녹음 종료 로직)가 멈추지 않고 다음 단계(세션 초기화)로 진행되도록 함.
+   */
+  const fetchSessionResults = useCallback(
+    async (targetSessionId = null) => {
+      const effectiveId =
+        targetSessionId ?? lastSessionId ?? sessionId;
+
+      if (!effectiveId) {
+        console.log("[Session] 결과 조회할 세션 ID 없음");
+        return null;
+      }
+
+      const url = `/session/${effectiveId}/results/`;
+      console.log("[Session] 결과 조회:", url);
+
+      try {
+        const res = await api.get(url);
+        console.log(
+          "[Session] 결과 조회 완료:",
+          JSON.stringify(res.data, null, 2)
+        );
+        return res.data;
+      } catch (e) {
+        // 🔥 [중요] 여기서 에러를 다시 throw하면 녹음 종료 로직 전체가 멈춥니다.
+        // 에러를 로그만 남기고 null을 반환하여 흐름을 살립니다.
+        console.error(
+          "[Session] 결과 조회 실패 (프로세스 계속 진행):",
+          e?.response?.data ?? e.message
+        );
+        // throw e; // <--- 삭제함
+        return null; // <--- 추가함: 실패 시에도 null 반환
+      }
+    },
+    [sessionId, lastSessionId]
+  );
+
   const value = {
     sessionId,
+    lastSessionId,   // 🔹 직전 세션 ID (결과 조회용)
     loading,
     error,
     resetSession,
     uploadAudioChunk,
+    fetchSessionResults,
   };
 
   return (
