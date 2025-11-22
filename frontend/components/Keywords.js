@@ -5,7 +5,6 @@ import { useSettings } from '../context/SettingsContext';
 import { useSession } from '../context/SessionContext';
 import { api } from '../api/instance';
 
-// 개별 칩 UI
 function Chip({ text, onRemove, theme }) {
   const scaledHeight = 28 * theme.scale;
   const scaledPaddingV = 6 * theme.scale;
@@ -55,7 +54,6 @@ function Chip({ text, onRemove, theme }) {
   );
 }
 
-// items: [{ id: number | null, text: string }]
 export default function Keywords({ onChange }) {
   const { theme } = useSettings();
   const { sessionId } = useSession();
@@ -64,158 +62,130 @@ export default function Keywords({ onChange }) {
   const [items, setItems] = useState([]);
   const [collapsed, setCollapsed] = useState(true);
 
-  // 공통: items 변경 시 상위로 알림
   const emitChange = (nextItems) => {
     setItems(nextItems);
     onChange?.(nextItems.map((i) => i.text));
   };
 
-  // 1. 키워드 조회
-  //    백엔드 스펙: GET /keywords/session/{session_id}/
+  // 1. 키워드 조회 (GET /keywords?session_id={세션ID})
   const fetchKeywords = async () => {
-    if (!sessionId) {
-      console.log('[Keywords] 세션 ID 없음, 서버 조회 건너뜀');
-      return;
-    }
+    if (!sessionId) return;
 
     try {
-      console.log(
-        `[Keywords] 서버 키워드 조회: GET /keywords/session/${sessionId}/`,
-      );
+      console.log('[Keywords] 조회 요청: /keywords?session_id=', sessionId);
 
-      // ✅ 여기 URL만 변경
-      const res = await api.get(`/keywords/session/${sessionId}/`);
-
-      console.log('[Keywords] 조회 status:', res.status);
-      console.log(
-        '[Keywords] 조회 데이터:',
-        JSON.stringify(res.data, null, 2),
-      );
-
-      // 응답 예시:
-      // {
-      //   "session_id": 7,
-      //   "total_keywords": 1,
-      //   "keywords": [
-      //     { "id": 1, "word": "ㅎㄹ", "created_at": "..." }
-      //   ]
-      // }
-      const rawList = Array.isArray(res.data?.keywords)
-        ? res.data.keywords
-        : [];
-
-      const list = rawList.map((k, idx) => {
-        // 혹시나 문자열 배열이 올 경우도 방어적으로 처리
-        if (typeof k === 'string') {
-          return {
-            id: null,
-            text: k,
-            _localKey: `srv-${idx}-${k}`,
-          };
-        }
-
-        const id = k.id ?? null;
-        const word = k.word ?? '';
-
-        return {
-          id,
-          text: String(word),
-          _localKey: `srv-${id ?? idx}-${word}`,
-        };
+      // 필요에 따라 아래 두 방식 중 하나 사용 가능
+      // const res = await api.get(`/keywords?session_id=${sessionId}`);
+      const res = await api.get('/keywords', {
+        params: { session_id: sessionId },
       });
 
+      if (!Array.isArray(res.data)) {
+        console.warn('[Keywords] 예상과 다른 응답 형태:', res.data);
+        emitChange([]);
+        return;
+      }
+
+      // 서버 응답 예:
+      // [
+      //   { id: 3, session_id: 5, keyword: '구로', created_at: '...' },
+      //   ...
+      // ]
+      const list = res.data.map((k) => ({
+        id: k.id,
+        text: k.keyword,
+        sessionId: k.session_id,
+        createdAt: k.created_at,
+        _localKey: `srv-${k.id}-${k.keyword}`,
+      }));
+
+      console.log(`[Keywords] 조회 성공, ${list.length}개`, list);
       emitChange(list);
     } catch (e) {
-      console.warn(
-        '[Keywords] 서버 키워드 조회 실패:',
-        e.response?.data ?? e.message,
-      );
+      console.warn('[Keywords] 조회 실패:', e.response?.data ?? e.message);
     }
   };
 
-  // 세션 ID가 준비되면 한 번 조회
   useEffect(() => {
     fetchKeywords();
-    // sessionId가 바뀔 때마다 다시 조회
   }, [sessionId]);
 
   // 2. 키워드 등록 (POST /keywords/)
+  // request:
+  // {
+  //   "session_id": 5,
+  //   "keywords": ["구로","나가는 문","오른쪽"]
+  // }
+  // 응답은 리스트 갱신에 사용하지 않고, 성공 후 다시 fetchKeywords() 호출
   const add = async () => {
     const v = input.trim();
     if (!v) return;
 
     if (!sessionId) {
-      console.log('[Keywords] 세션 ID 없음, 서버에 전송하지 않음');
+      console.log('[Keywords] 세션 ID 없음');
       return;
     }
 
     try {
       const payload = {
-        // 스펙: { "session_id": 5, "keywords": ["지연", "탑승구", ...] }
         session_id: sessionId,
         keywords: [v],
       };
 
-      console.log('[Keywords] 등록 요청: POST /keywords/', payload);
-
+      console.log('[Keywords] 등록 요청 payload:', payload);
       const res = await api.post('/keywords/', payload);
+      console.log('[Keywords] 등록 응답:', res.data);
 
-      console.log('[Keywords] 등록 응답 status:', res.status);
-      console.log(
-        '[Keywords] 등록 응답 데이터:',
-        JSON.stringify(res.data, null, 2),
-      );
-
-      // 등록 후에는 항상 서버 기준으로 다시 불러오기
-      setInput('');
+      // 서버 상태를 기준으로 전체 목록 재조회
       await fetchKeywords();
+
+      setInput('');
     } catch (e) {
       console.warn(
-        '[Keywords] 서버 키워드 등록 실패:',
+        '[Keywords] 등록 실패:',
         e.response?.data ?? e.message,
       );
     }
   };
 
-  // 3. 키워드 삭제 (DELETE /keywords/{id}/)
+  // 3. 키워드 삭제 (DELETE /keywords/{id})
+  // url의 {id}는 키워드 id
+  // response:
+  // {
+  //   "id": 5,
+  //   "keyword": "오른쪽",
+  //   "detail": "deleted"
+  // }
   const remove = async (item) => {
     const { id, text } = item;
 
-    // id가 없으면 서버에 삭제 요청 불가 → 로컬에서만 제거
-    if (id == null) {
-      console.warn(
-        `[Keywords] 이 키워드는 id가 없어 서버에 삭제 요청을 보낼 수 없습니다: "${text}"`,
-      );
-      const next = items.filter((it) => it !== item);
-      emitChange(next);
-      return;
-    }
+    console.log(`[Keywords] 삭제 시도: "${text}", ID값: ${id}`);
 
-    if (!sessionId) {
-      console.log('[Keywords] 세션 ID 없음, 삭제 요청 안 함');
+    if (id == null) {
+      console.warn('[Keywords] ID가 null입니다. 화면에서만 제거합니다.');
       const next = items.filter((it) => it !== item);
       emitChange(next);
       return;
     }
 
     try {
-      console.log(`[Keywords] 삭제 요청: DELETE /keywords/${id}/`);
+      const requestUrl = `/keywords/${id}/`;
+      console.log(`▶️ [삭제 요청 URL]: ${requestUrl}`);
 
-      const res = await api.delete(`/keywords/${id}/`);
+      const res = await api.delete(requestUrl);
+      console.log('[Keywords] 삭제 응답:', res.data);
 
-      console.log('[Keywords] 삭제 응답 status:', res.status);
-      console.log(
-        '[Keywords] 삭제 응답 데이터:',
-        JSON.stringify(res.data, null, 2),
-      );
+      if (res.data?.detail === 'deleted') {
+        console.log(`✅ [삭제 성공] ID: ${res.data.id}, keyword: ${res.data.keyword}`);
+      } else {
+        console.warn('[Keywords] 삭제 응답이 예상과 다릅니다:', res.data);
+      }
 
+      // 로컬 리스트에서 해당 id 제거
       const next = items.filter((it) => it.id !== id);
       emitChange(next);
     } catch (e) {
-      console.warn(
-        '[Keywords] 서버 키워드 삭제 실패:',
-        e.response?.data ?? e.message,
-      );
+      console.error('[Keywords] 삭제 실패:', e.response?.data ?? e.message);
     }
   };
 
@@ -236,7 +206,6 @@ export default function Keywords({ onChange }) {
         등록한 키워드가 안내방송에 포함되면 알림을 받습니다
       </Text>
 
-      {/* 입력 영역 */}
       <View style={[styles.inputRow, { gap: 8 }]}>
         <TextInput
           value={input}
@@ -273,7 +242,6 @@ export default function Keywords({ onChange }) {
         </Pressable>
       </View>
 
-      {/* 리스트 헤더 */}
       <View style={styles.rowHeader}>
         <Text
           style={{
@@ -297,7 +265,6 @@ export default function Keywords({ onChange }) {
         </Pressable>
       </View>
 
-      {/* 칩 목록 */}
       <View style={[styles.chips, collapsed && styles.chipsCollapsed]}>
         {items.map((item, idx) => (
           <Chip
