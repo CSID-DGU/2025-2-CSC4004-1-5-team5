@@ -1,6 +1,18 @@
 import { useState, useMemo, useRef } from 'react';
-import { StyleSheet, View, ScrollView, Alert } from 'react-native';
+import { 
+  StyleSheet, 
+  View, 
+  ScrollView, 
+  Alert, 
+  Text, 
+  Image, 
+  Pressable, 
+  Linking,
+  Platform 
+} from 'react-native';
 import * as Sharing from 'expo-sharing';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 
 // ✅ expo-audio용 API 임포트
 import {
@@ -12,7 +24,7 @@ import {
 // 컴포넌트 임포트
 import AnnouncementHeader from '../components/AnnouncementHeader';
 import RealtimeHistoryTabs from '../components/RealtimeHistoryTabs';
-import CoreInfo from '../components/CoreInfo';
+// CoreInfo 제거됨
 import Keywords from '../components/Keywords';
 import LiveRecording from '../components/LiveRecording';
 import ListeningStatus from '../components/ListeningStatus';
@@ -21,10 +33,33 @@ import SettingsScreen from './SettingsScreen';
 import { useSettings } from '../context/SettingsContext';
 import { useSession } from '../context/SessionContext';
 
+// ✅ 알림 핸들러 설정 (MainScreen 파일 상단으로 이동)
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+// ✅ 테스트 알림 전송 함수
+async function scheduleTestNotification() {
+  console.log('테스트 알림을 1초 후에 전송합니다...');
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "🔔 알림 테스트",
+      body: "알림 권한이 성공적으로 설정되었습니다!",
+      sound: 'default',
+    },
+    trigger: { seconds: 1 },
+  });
+}
+
 const CHUNK_DURATION_MS = 10000;
 
 export default function MainScreen() {
-  const { theme } = useSettings();
+  // ✅ settings와 apply를 가져옵니다 (알림 설정값 변경용)
+  const { theme, settings, apply } = useSettings();
   const { sessionId, resetSession, loading: sessionLoading } = useSession();
 
   const [route, setRoute] = useState('home');
@@ -32,24 +67,63 @@ export default function MainScreen() {
   const [recording, setRecording] = useState(false);
   const [keywords, setKeywords] = useState([]);
 
-  // ✅ expo-audio의 recorder 인스턴스 (High Quality 프리셋 사용)
+  // ✅ expo-audio의 recorder 인스턴스
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   // 청크 타이머
   const intervalRef = useRef(null);
 
-  // ✅ 새 10초 청크 시작
+  // 설정 저장 헬퍼
+  const persist = (next) => apply(next);
+
+  // ✅ 알림 활성화/권한 요청 함수 (SettingsScreen에서 가져옴)
+  const toggleAlerts = async () => {
+    if (settings.alertsEnabled) {
+      persist({ ...settings, alertsEnabled: false });
+      console.log('알림이 비활성화되었습니다.');
+      return;
+    }
+
+    if (!Device.isDevice) {
+      Alert.alert('알림 테스트', '시뮬레이터에서는 알림 권한을 요청할 수 없습니다.');
+      persist({ ...settings, alertsEnabled: true }); // UI 토글만
+      return;
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      console.log('알림 권한을 요청합니다...');
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus === 'granted') {
+      console.log('알림 권한이 허용되었습니다.');
+      persist({ ...settings, alertsEnabled: true });
+      await scheduleTestNotification(); // 테스트 알림
+    } else {
+      console.log('알림 권한이 거부되었습니다.');
+      Alert.alert(
+        '알림 권한 필요',
+        '키워드 알림을 받으려면 앱 설정에서 권한을 허용해야 합니다.',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설정으로 이동', onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
+  };
+
+  // --- 기존 녹음 로직 ---
   const startNewChunk = async () => {
     try {
       console.log('새로운 10초 청크 녹음 시작...');
-
-      // expo-audio 전용 오디오 모드 설정
       await setAudioModeAsync({
         playsInSilentMode: true,
         allowsRecording: true,
       });
-
-      // 준비 후 녹음 시작
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
     } catch (err) {
@@ -58,40 +132,32 @@ export default function MainScreen() {
     }
   };
 
-  // ✅ 이전 청크 중지 및 저장
   const stopAndSaveChunk = async () => {
     try {
       console.log('이전 10초 청크 저장 중...');
-      // stop()이 끝나면 audioRecorder.uri에 파일 경로가 생김
       await audioRecorder.stop();
       const uri = audioRecorder.uri;
-
       console.log('10초 청크 저장 완료:', uri);
-      // 여기서 서버 업로드 / 분석 API 호출 등 연결 가능
     } catch (error) {
       console.error('청크 저장 실패:', error);
     }
   };
 
   const toggleRecording = async () => {
-    // --- 녹음 중지 ---
     if (recording) {
       console.log('전체 녹음을 중지합니다...');
       setRecording(false);
 
-      // 타이머 제거
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
 
       try {
-        // 마지막 청크 중지 및 저장
         await audioRecorder.stop();
         const uri = audioRecorder.uri;
         console.log('마지막 청크 저장 완료:', uri);
 
-        // 기기에서 바로 공유 테스트용
         if (uri && (await Sharing.isAvailableAsync())) {
           await Sharing.shareAsync(uri);
         }
@@ -101,11 +167,9 @@ export default function MainScreen() {
       } catch (error) {
         console.error('마지막 청크 중지/저장 또는 세션 리셋 실패:', error);
       }
-
       return;
     }
 
-    // --- 녹음 시작 ---
     if (sessionLoading) {
       Alert.alert('세션 준비 중', '세션이 준비 중입니다. 잠시 후 다시 시도해주세요.');
       return;
@@ -118,10 +182,8 @@ export default function MainScreen() {
     console.log(`[Session: ${sessionId}] 10초 단위 청크 녹음을 시작합니다...`);
     setRecording(true);
 
-    // 첫 청크 시작
     await startNewChunk();
 
-    // 이후 10초마다 이전 청크를 멈추고 새 청크 시작
     intervalRef.current = setInterval(async () => {
       await stopAndSaveChunk();
       await startNewChunk();
@@ -159,7 +221,31 @@ export default function MainScreen() {
 
         {tab === 'realtime' ? (
           <>
-            <CoreInfo />
+            {/* ✅ CoreInfo 삭제됨 -> 알림 설정 카드 추가 */}
+            <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+              <View style={styles.cardTitleRow}>
+                <Image
+                  source={require('../assets/alarm.png')}
+                  style={styles.leadImg}
+                />
+                <Text style={[styles.cardTitle, t(theme, 16)]}>알림 설정</Text>
+              </View>
+              <View style={styles.rowBetween}>
+                <View>
+                  <Text style={[styles.label, t(theme, 13)]}>알림 활성화</Text>
+                  <Text style={[styles.helpText, ts(theme, 12)]}>
+                    키워드 감지 시 알림을 받습니다
+                  </Text>
+                </View>
+                <SwitchLike on={settings.alertsEnabled} onPress={toggleAlerts} />
+              </View>
+              <View style={styles.tipBox}>
+                <Text style={[styles.tipText, ts(theme, 12)]}>
+                  💡 등록된 키워드가 안내방송에 포함되면 알림이 옵니다.
+                </Text>
+              </View>
+            </View>
+
             <Keywords sessionId={sessionId} onChange={setKeywords} />
             {recording && <ListeningStatus />}
           </>
@@ -177,9 +263,69 @@ export default function MainScreen() {
   );
 }
 
+// --- 헬퍼 컴포넌트 및 스타일 (SettingsScreen에서 가져옴) ---
+
+function SwitchLike({ on, onPress }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.switch, on && styles.switchOn]}>
+      <View style={[styles.knob, on && styles.knobOn]} />
+    </Pressable>
+  );
+}
+
+const t = (theme, base) => ({
+  fontSize: Math.round(base * theme.scale),
+  fontWeight: theme.weight,
+  color: theme.colors.text,
+});
+const ts = (theme, base) => ({
+  fontSize: Math.round(base * theme.scale),
+  color: theme.colors.sub,
+});
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: {
-    // 기존 스타일 그대로 사용
+    // 기본 패딩 등은 ScrollView style prop에서 처리
   },
+  // --- 알림 카드용 스타일 추가 ---
+  card: {
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 4, 
+  },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  leadImg: { width: 20, height: 20, resizeMode: 'contain' },
+  cardTitle: { fontWeight: '700' },
+  rowBetween: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  label: { fontWeight: '700' },
+  helpText: {},
+  tipBox: { backgroundColor: '#EEF6FF', borderRadius: 10, padding: 10 },
+  tipText: {},
+  switch: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#d1d5db',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  switchOn: { backgroundColor: '#111827' },
+  knob: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    transform: [{ translateX: 0 }],
+  },
+  knobOn: { transform: [{ translateX: 20 }] },
 });

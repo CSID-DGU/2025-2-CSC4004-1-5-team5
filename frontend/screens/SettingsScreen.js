@@ -6,87 +6,20 @@ import {
   Pressable,
   Image,
   ScrollView,
-  Alert,
-  Linking,
-  Platform,
 } from 'react-native';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { useSettings } from '../context/SettingsContext';
-
-// 알림 핸들러 설정 (앱 실행 중에도 알림 표시)
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
-// 테스트 알림 전송 함수
-async function scheduleTestNotification() {
-  console.log('테스트 알림을 1초 후에 전송합니다...');
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "🔔 알림 테스트",
-      body: "알림 권한이 성공적으로 설정되었습니다!",
-      sound: 'default',
-    },
-    trigger: { seconds: 1 },
-  });
-}
 
 export default function SettingsScreen({ onClose }) {
   const { settings, apply, theme } = useSettings();
 
-  // (슬라이더 관련 state - 기존 코드)
+  // 슬라이더 관련 state
   const [barW, setBarW] = useState(1);
   const [detentLatched, setDetentLatched] = useState(false);
   const MIN = 50, MAX = 100, DETENT = 75, SNAP_EPS = 2, UNLOCK_EPS = 6;
 
   const persist = (next) => apply(next);
 
-  // ✅ (수정) 알림 활성화/권한 요청 함수
-  const toggleAlerts = async () => {
-    if (settings.alertsEnabled) {
-      persist({ ...settings, alertsEnabled: false });
-      console.log('알림이 비활성화되었습니다.');
-      return;
-    }
-
-    if (!Device.isDevice) {
-      Alert.alert('알림 테스트', '시뮬레이터에서는 알림 권한을 요청할 수 없습니다.');
-      persist({ ...settings, alertsEnabled: true }); // UI 토글만
-      return;
-    }
-
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      console.log('알림 권한을 요청합니다...');
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus === 'granted') {
-      console.log('알림 권한이 허용되었습니다.');
-      persist({ ...settings, alertsEnabled: true });
-      await scheduleTestNotification(); // 테스트 알림
-    } else {
-      console.log('알림 권한이 거부되었습니다.');
-      Alert.alert(
-        '알림 권한 필요',
-        '키워드 알림을 받으려면 앱 설정에서 권한을 허용해야 합니다.',
-        [
-          { text: '취소', style: 'cancel' },
-          { text: '설정으로 이동', onPress: () => Linking.openSettings() },
-        ]
-      );
-    }
-  };
-
-  // (슬라이더 헬퍼 함수 - 기존 코드)
+  // 슬라이더 헬퍼 함수
   const toProgressPct = (val) => ((val - MIN) / (MAX - MIN)) * 100;
   const mapXToValue = (x) => {
     if (barW <= 0) return settings.fontScalePct;
@@ -120,7 +53,6 @@ export default function SettingsScreen({ onClose }) {
   const selectContrast = (v) => persist({ ...settings, contrast: v });
   const selectWeight = (v) => persist({ ...settings, fontWeight: v });
 
-  // (return 문 - 기존 코드)
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.bg }]}>
       {/* 헤더 */}
@@ -138,32 +70,9 @@ export default function SettingsScreen({ onClose }) {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* 알림 설정 */}
-        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-          <View style={styles.cardTitleRow}>
-            <Image
-              source={require('../assets/alarm.png')}
-              style={styles.leadImg}
-            />
-            <Text style={[styles.cardTitle, t(theme, 16)]}>알림 설정</Text>
-          </View>
-          <View style={styles.rowBetween}>
-            <View>
-              <Text style={[styles.label, t(theme, 13)]}>알림 활성화</Text>
-              <Text style={[styles.helpText, ts(theme, 12)]}>
-                키워드 감지 시 알림을 받습니다
-              </Text>
-            </View>
-            <SwitchLike on={settings.alertsEnabled} onPress={toggleAlerts} />
-          </View>
-          <View style={styles.tipBox}>
-            <Text style={[styles.tipText, ts(theme, 12)]}>
-              💡 알림을 받으려면 등록된 키워드가 안내방송에 포함되어야 합니다.
-            </Text>
-          </View>
-        </View>
+        {/* ✅ 알림 설정 섹션 삭제됨 */}
 
-        {/* 접근성 설정 (기존 코드와 동일) */}
+        {/* 접근성 설정 */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <View style={styles.cardTitleRow}>
             <Image
@@ -172,10 +81,11 @@ export default function SettingsScreen({ onClose }) {
             />
             <Text style={[styles.cardTitle, t(theme, 16)]}>접근성 설정</Text>
           </View>
-          {/* ... (이하 접근성 설정 UI) ... */}
-           <Text style={[styles.descText, ts(theme, 12)]}>
+          
+          <Text style={[styles.descText, ts(theme, 12)]}>
             화면 표시를 개인 선호도에 맞게 조정합니다.
           </Text>
+
           {/* 글자 크기 */}
           <View style={{ marginTop: 10 }}>
             <View style={styles.rowBetween}>
@@ -200,28 +110,30 @@ export default function SettingsScreen({ onClose }) {
               <Text style={[styles.sliderLabelText, ts(theme, 11)]}>크게</Text>
             </View>
           </View>
+
           {/* 색상 대비 */}
           <View style={{ marginTop: 18 }}>
             <Text style={[styles.label, t(theme, 13)]}>색상 대비</Text>
             <RadioRow
-              label="낮음  부드러운 색상"
+              label="낮음  부드러운 색상"
               selected={settings.contrast === 'low'}
               onPress={() => selectContrast('low')}
               theme={theme}
             />
             <RadioRow
-              label="보통  기본 설정"
+              label="보통  기본 설정"
               selected={settings.contrast === 'normal'}
               onPress={() => selectContrast('normal')}
               theme={theme}
             />
             <RadioRow
-              label="높음  선명한 색상"
+              label="높음  선명한 색상"
               selected={settings.contrast === 'high'}
               onPress={() => selectContrast('high')}
               theme={theme}
             />
           </View>
+
           {/* 글꼴 굵기 */}
           <View style={{ marginTop: 18 }}>
             <Text style={[styles.label, t(theme, 13)]}>글꼴 굵기</Text>
@@ -244,6 +156,7 @@ export default function SettingsScreen({ onClose }) {
               theme={theme}
             />
           </View>
+
           <View style={[styles.tipBox, { marginTop: 16 }]}>
             <Text style={[styles.tipText, ts(theme, 12)]}>
               💡 설정은 자동으로 저장되며 앱을 다시 열어도 유지됩니다.
@@ -255,14 +168,7 @@ export default function SettingsScreen({ onClose }) {
   );
 }
 
-// (헬퍼 컴포넌트 및 스타일 - 기존 코드)
-function SwitchLike({ on, onPress }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.switch, on && styles.switchOn]}>
-      <View style={[styles.knob, on && styles.knobOn]} />
-    </Pressable>
-  );
-}
+// 헬퍼 컴포넌트 및 스타일
 function RadioRow({ label, selected, onPress, theme }) {
   return (
     <Pressable
@@ -276,6 +182,7 @@ function RadioRow({ label, selected, onPress, theme }) {
     </Pressable>
   );
 }
+
 const t = (theme, base) => ({
   fontSize: Math.round(base * theme.scale),
   fontWeight: theme.weight,
@@ -285,6 +192,7 @@ const ts = (theme, base) => ({
   fontSize: Math.round(base * theme.scale),
   color: theme.colors.sub,
 });
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
@@ -317,28 +225,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   label: { fontWeight: '700' },
-  helpText: {},
   valueText: {},
   descText: {},
   tipBox: { backgroundColor: '#EEF6FF', borderRadius: 10, padding: 10 },
   tipText: {},
-  switch: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#d1d5db',
-    padding: 2,
-    justifyContent: 'center',
-  },
-  switchOn: { backgroundColor: '#111827' },
-  knob: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    transform: [{ translateX: 0 }],
-  },
-  knobOn: { transform: [{ translateX: 20 }] },
   slider: {
     height: 24,
     borderRadius: 999,

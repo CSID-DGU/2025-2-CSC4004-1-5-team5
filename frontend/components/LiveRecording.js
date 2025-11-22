@@ -9,24 +9,27 @@ import {
 } from 'react-native';
 import { useSettings } from '../context/SettingsContext';
 import { requestRecordingPermissionsAsync } from 'expo-audio';
+// 1. 여기에 import 추가
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LiveRecording({ recording, onToggle, disabled = false }) {
   const { theme } = useSettings();
+  
+  // 2. 안전 영역(Safe Area) 크기 가져오기
+  const insets = useSafeAreaInsets();
 
   const handlePress = async () => {
-    // 세션 준비 중에는 버튼 잠시 비활성화
+    // ... (기존 로직 동일) ...
     if (disabled && !recording) {
       console.log('Button is disabled (session loading), ignoring press.');
       return;
     }
 
-    // 이미 녹음 중이면 그냥 중지
     if (recording) {
       onToggle();
       return;
     }
 
-    // 녹음 시작 시 권한 확인
     try {
       console.log('마이크 권한 상태 확인 및 요청 중...');
       const permission = await requestRecordingPermissionsAsync();
@@ -38,7 +41,6 @@ export default function LiveRecording({ recording, onToggle, disabled = false })
         return;
       }
 
-      // 한 번 더 물어볼 수 없는 상태 (사용자가 "다시는 묻지 않기" 등으로 막은 경우)
       if (!granted && canAskAgain === false) {
         Alert.alert(
           '마이크 권한 필요',
@@ -51,7 +53,6 @@ export default function LiveRecording({ recording, onToggle, disabled = false })
         return;
       }
 
-      // 그 외(거부 등)
       Alert.alert('권한 거부', '마이크 권한이 거부되었습니다.');
     } catch (err) {
       console.error('마이크 권한 확인 중 치명적 오류 발생:', err);
@@ -63,7 +64,9 @@ export default function LiveRecording({ recording, onToggle, disabled = false })
   };
 
   return (
-    <View style={styles.footer}>
+    // 3. style에 하단 safe area 값을 더해서 패딩 적용
+    // 기존 padding: 16에 insets.bottom을 더해줍니다.
+    <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
       <Pressable
         onPress={handlePress}
         disabled={disabled && !recording}
@@ -106,7 +109,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    padding: 16,
+    padding: 16, // 여기 기본 패딩은 유지하고 위에서 덮어씁니다
     backgroundColor: 'transparent',
   },
   button: {
