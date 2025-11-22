@@ -62,9 +62,10 @@ export default function Keywords({ onChange }) {
   const [items, setItems] = useState([]);
   const [collapsed, setCollapsed] = useState(true);
 
+  // 외부로는 항상 "word 목록"만 전달
   const emitChange = (nextItems) => {
     setItems(nextItems);
-    onChange?.(nextItems.map((i) => i.text));
+    onChange?.(nextItems.map((i) => i.text)); // ← 여기서 id는 절대 안 나감
   };
 
   // 1. 키워드 조회 (GET /keywords?session_id={세션ID})
@@ -74,8 +75,6 @@ export default function Keywords({ onChange }) {
     try {
       console.log('[Keywords] 조회 요청: /keywords?session_id=', sessionId);
 
-      // 필요에 따라 아래 두 방식 중 하나 사용 가능
-      // const res = await api.get(`/keywords?session_id=${sessionId}`);
       const res = await api.get('/keywords', {
         params: { session_id: sessionId },
       });
@@ -86,11 +85,6 @@ export default function Keywords({ onChange }) {
         return;
       }
 
-      // 서버 응답 예:
-      // [
-      //   { id: 3, session_id: 5, keyword: '구로', created_at: '...' },
-      //   ...
-      // ]
       const list = res.data.map((k) => ({
         id: k.id,
         text: k.keyword,
@@ -106,8 +100,16 @@ export default function Keywords({ onChange }) {
     }
   };
 
+  // 세션이 바뀌면:
+  // 1) 기존 items / onChange 상태 비우고
+  // 2) 새 세션 기준으로 다시 GET
   useEffect(() => {
-    fetchKeywords();
+    // 세션 변경 시 이전 세션의 키워드/ID는 버림
+    setItems([]);
+    onChange?.([]);
+    if (sessionId) {
+      fetchKeywords();
+    }
   }, [sessionId]);
 
   // 2. 키워드 등록 (POST /keywords/)
@@ -129,7 +131,7 @@ export default function Keywords({ onChange }) {
     try {
       const payload = {
         session_id: sessionId,
-        keywords: [v],
+        keywords: [v], // ← word만 넘김, id는 없음
       };
 
       console.log('[Keywords] 등록 요청 payload:', payload);
@@ -181,7 +183,6 @@ export default function Keywords({ onChange }) {
         console.warn('[Keywords] 삭제 응답이 예상과 다릅니다:', res.data);
       }
 
-      // 로컬 리스트에서 해당 id 제거
       const next = items.filter((it) => it.id !== id);
       emitChange(next);
     } catch (e) {
