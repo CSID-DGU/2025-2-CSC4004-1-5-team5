@@ -50,11 +50,12 @@ class SessionViewSet(viewsets.ViewSet):
             return Response({"detail": "Session이 만료되었습니다."}, status=410)
 
         alerts = Alert.objects.filter(keyword__session=session)
+        done = session.chunks.filter(status="COMPLETE").count()
 
         return Response({
             "session_id": pk,
             "status": session.status,
-            "progress": session.progress,
+            "done_chunks": done,
             "total_broadcasts": session.broadcasts.count(),
             "total_keywords": alerts.count(),
             "keyword_alerts": [
