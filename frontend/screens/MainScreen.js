@@ -1,20 +1,20 @@
-import { useState, useMemo, useRef } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  ScrollView, 
-  Alert, 
-  Text, 
-  Image, 
-  Pressable, 
+// screens/MainScreen.js
+import { useState, useMemo, useRef, useEffect } from 'react';
+import {
+  StyleSheet,
+  View,
+  ScrollView,
+  Alert,
+  Text,
+  Image,
+  Pressable,
   Linking,
-  Platform 
 } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 
-// ✅ expo-audio용 API 임포트
+// expo-audio용 API 임포트
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -24,7 +24,6 @@ import {
 // 컴포넌트 임포트
 import AnnouncementHeader from '../components/AnnouncementHeader';
 import RealtimeHistoryTabs from '../components/RealtimeHistoryTabs';
-// CoreInfo 제거됨
 import Keywords from '../components/Keywords';
 import LiveRecording from '../components/LiveRecording';
 import ListeningStatus from '../components/ListeningStatus';
@@ -33,7 +32,7 @@ import SettingsScreen from './SettingsScreen';
 import { useSettings } from '../context/SettingsContext';
 import { useSession } from '../context/SessionContext';
 
-// ✅ 알림 핸들러 설정 (MainScreen 파일 상단으로 이동)
+// 알림 핸들러 설정
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -42,13 +41,13 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ✅ 테스트 알림 전송 함수
+// 테스트 알림 전송 함수
 async function scheduleTestNotification() {
   console.log('테스트 알림을 1초 후에 전송합니다...');
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: "🔔 알림 테스트",
-      body: "알림 권한이 성공적으로 설정되었습니다!",
+      title: '🔔 알림 테스트',
+      body: '알림 권한이 성공적으로 설정되었습니다!',
       sound: 'default',
     },
     trigger: { seconds: 1 },
@@ -58,25 +57,40 @@ async function scheduleTestNotification() {
 const CHUNK_DURATION_MS = 10000;
 
 export default function MainScreen() {
-  // ✅ settings와 apply를 가져옵니다 (알림 설정값 변경용)
   const { theme, settings, apply } = useSettings();
   const { sessionId, resetSession, loading: sessionLoading } = useSession();
 
   const [route, setRoute] = useState('home');
   const [tab, setTab] = useState('realtime');
   const [recording, setRecording] = useState(false);
+
+  // 여기 keywords는 항상 ["구로", "나가는 문", ...] 형태의 string 배열
   const [keywords, setKeywords] = useState([]);
 
-  // ✅ expo-audio의 recorder 인스턴스
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-
-  // 청크 타이머
   const intervalRef = useRef(null);
+
+  const paddings = useMemo(
+    () => ({
+      outerPad: Math.round(16 * theme.scale),
+      bottomPad: Math.round(120 * theme.scale),
+    }),
+    [theme.scale],
+  );
+
+  // unmount 시 interval 정리
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
 
   // 설정 저장 헬퍼
   const persist = (next) => apply(next);
 
-  // ✅ 알림 활성화/권한 요청 함수 (SettingsScreen에서 가져옴)
+  // 알림 활성화/권한 요청
   const toggleAlerts = async () => {
     if (settings.alertsEnabled) {
       persist({ ...settings, alertsEnabled: false });
@@ -86,7 +100,7 @@ export default function MainScreen() {
 
     if (!Device.isDevice) {
       Alert.alert('알림 테스트', '시뮬레이터에서는 알림 권한을 요청할 수 없습니다.');
-      persist({ ...settings, alertsEnabled: true }); // UI 토글만
+      persist({ ...settings, alertsEnabled: true });
       return;
     }
 
@@ -102,7 +116,7 @@ export default function MainScreen() {
     if (finalStatus === 'granted') {
       console.log('알림 권한이 허용되었습니다.');
       persist({ ...settings, alertsEnabled: true });
-      await scheduleTestNotification(); // 테스트 알림
+      await scheduleTestNotification();
     } else {
       console.log('알림 권한이 거부되었습니다.');
       Alert.alert(
@@ -111,12 +125,13 @@ export default function MainScreen() {
         [
           { text: '취소', style: 'cancel' },
           { text: '설정으로 이동', onPress: () => Linking.openSettings() },
-        ]
+        ],
       );
     }
   };
 
-  // --- 기존 녹음 로직 ---
+  // --- 녹음 관련 로직 ---
+
   const startNewChunk = async () => {
     try {
       console.log('새로운 10초 청크 녹음 시작...');
@@ -144,6 +159,7 @@ export default function MainScreen() {
   };
 
   const toggleRecording = async () => {
+    // 이미 녹음 중이면 → 녹음 종료 및 세션 리셋
     if (recording) {
       console.log('전체 녹음을 중지합니다...');
       setRecording(false);
@@ -163,6 +179,7 @@ export default function MainScreen() {
         }
 
         console.log('녹음 종료됨. 새 세션으로 교체를 요청합니다...');
+        // 여기서 keywords는 word(string) 배열만 넘어감
         await resetSession(keywords);
       } catch (error) {
         console.error('마지막 청크 중지/저장 또는 세션 리셋 실패:', error);
@@ -170,6 +187,7 @@ export default function MainScreen() {
       return;
     }
 
+    // 녹음 시작
     if (sessionLoading) {
       Alert.alert('세션 준비 중', '세션이 준비 중입니다. 잠시 후 다시 시도해주세요.');
       return;
@@ -189,14 +207,6 @@ export default function MainScreen() {
       await startNewChunk();
     }, CHUNK_DURATION_MS);
   };
-
-  const paddings = useMemo(
-    () => ({
-      outerPad: Math.round(16 * theme.scale),
-      bottomPad: Math.round(120 * theme.scale),
-    }),
-    [theme.scale]
-  );
 
   if (route === 'settings') {
     return <SettingsScreen onClose={() => setRoute('home')} />;
@@ -221,7 +231,7 @@ export default function MainScreen() {
 
         {tab === 'realtime' ? (
           <>
-            {/* ✅ CoreInfo 삭제됨 -> 알림 설정 카드 추가 */}
+            {/* 알림 설정 카드 */}
             <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
               <View style={styles.cardTitleRow}>
                 <Image
@@ -246,7 +256,9 @@ export default function MainScreen() {
               </View>
             </View>
 
-            <Keywords sessionId={sessionId} onChange={setKeywords} />
+            {/* 여기서 sessionId를 prop으로 넘길 필요 없음 */}
+            <Keywords onChange={setKeywords} />
+
             {recording && <ListeningStatus />}
           </>
         ) : (
@@ -263,7 +275,7 @@ export default function MainScreen() {
   );
 }
 
-// --- 헬퍼 컴포넌트 및 스타일 (SettingsScreen에서 가져옴) ---
+// --- 헬퍼 컴포넌트 및 스타일 ---
 
 function SwitchLike({ on, onPress }) {
   return (
@@ -285,10 +297,7 @@ const ts = (theme, base) => ({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: {
-    // 기본 패딩 등은 ScrollView style prop에서 처리
-  },
-  // --- 알림 카드용 스타일 추가 ---
+  content: {},
   card: {
     borderRadius: 14,
     padding: 14,
@@ -297,7 +306,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
-    marginBottom: 4, 
+    marginBottom: 4,
   },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   leadImg: { width: 20, height: 20, resizeMode: 'contain' },
