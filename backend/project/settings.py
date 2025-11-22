@@ -36,6 +36,12 @@ DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://yeonhee.shop",
+    "https://www.yeonhee.shop"
+]
+
+
 # Application definition
 
 INSTALLED_APPS = [

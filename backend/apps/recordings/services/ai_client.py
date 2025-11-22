@@ -11,6 +11,4 @@ def call_ai_server(audio_path,chunk_id):
             data={"chunk_id": chunk_id},
             timeout=30
             )
-
-    response.raise_for_status()
     return response.json()
