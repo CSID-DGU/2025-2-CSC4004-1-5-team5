@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .views import KeywordViewSet
+from apps.keywords.views.keyword import KeywordViewSet
 
 app_name = "keywords"
 

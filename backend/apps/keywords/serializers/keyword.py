@@ -1,11 +1,11 @@
 from rest_framework import serializers
-from .models import Keyword, Alert
+from ..models import Keyword
 from apps.recordings.models import Session
 
 
-# ============================================================
-#  Keyword Serializers
-# ============================================================
+# =================================================================
+# Keyword 조회 Serializer
+# =================================================================
 
 class KeywordListSerializer(serializers.ModelSerializer):
     session_id = serializers.IntegerField(source="session.id", read_only=True)
@@ -15,6 +15,10 @@ class KeywordListSerializer(serializers.ModelSerializer):
         fields = ["id", "session_id", "word", "created_at"]
         read_only_fields = ["id", "session_id", "created_at"]
 
+
+# =================================================================
+# Keyword 생성 Serializer
+# =================================================================
 
 class KeywordCreateSerializer(serializers.Serializer):
     session_id = serializers.IntegerField()
@@ -28,29 +32,14 @@ class KeywordCreateSerializer(serializers.Serializer):
 
         session = Session.objects.get(id=session_id)
 
-        created = []
-        for w in words:
+        created_keywords = []
+        for word in words:
             keyword, _ = Keyword.objects.get_or_create(
                 session=session,
-                word=w
+                word=word
             )
-            created.append(keyword)
+            created_keywords.append(keyword)
 
-        return created
+        return created_keywords
         
-    
-# ============================================================
-#  Alert Serializers
-# ============================================================
 
-class KeywordAlertSerializer(serializers.ModelSerializer):
-    chunk_id = serializers.IntegerField(source="broadcast.audio_chunk.id", read_only=True)
-    keyword = serializers.CharField(source="keyword.word", read_only=True)
-
-    class Meta:
-        model = Alert
-        fields = [
-            "chunk_id",
-            "keyword",
-            "detected_at"
-        ]
