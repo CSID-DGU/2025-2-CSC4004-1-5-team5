@@ -46,7 +46,7 @@ class AudioChunkViewSet(viewsets.ViewSet):
         # ④ 비동기 처리 태스크 호출
         process_audio_chunk.delay(chunk.id)
         
-        #⑤ SSE로 "새 chunk 들어옴" 알림 (선택)
+        #⑤ SSE로 "새 chunk 들어옴" 알림
         push_event(session.id, {
             "type": "chunk_received",
             "chunk_id": chunk.id,
