@@ -1,4 +1,4 @@
-// FRONTEND/context/SessionContext.js (또는 .tsx)
+// FRONTEND/context/SessionContext.js
 
 import React, {
   createContext,
@@ -6,17 +6,61 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // 추가됨
 import { api } from "../api/instance";
 
-// 세션 정보를 보관할 컨텍스트 생성
 const SessionContext = createContext(null);
+const SESSION_HISTORY_KEY = "SESSION_HISTORY_IDS";
+
+/**
+ * 로컬 스토리지에 세션 ID 추가
+ */
+async function addSessionIdToHistory(id) {
+  try {
+    const jsonValue = await AsyncStorage.getItem(SESSION_HISTORY_KEY);
+    const history = jsonValue != null ? JSON.parse(jsonValue) : [];
+    if (!history.includes(id)) {
+      history.push(id);
+      await AsyncStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(history));
+    }
+  } catch (e) {
+    console.error("[Session] 세션 ID 저장 실패:", e);
+  }
+}
+
+/**
+ * 앱 시작 시 이전 세션들 일괄 삭제
+ */
+async function cleanupOldSessions() {
+  try {
+    const jsonValue = await AsyncStorage.getItem(SESSION_HISTORY_KEY);
+    const history = jsonValue != null ? JSON.parse(jsonValue) : [];
+
+    if (history.length === 0) return;
+
+    console.log(`[Session] 이전 세션 ${history.length}개 삭제 시도 중...`);
+
+    // 병렬로 삭제 요청 전송
+    const deletePromises = history.map((id) =>
+      api.delete(`/session/${id}/`).catch((err) => {
+        console.log(`[Session] 세션 ${id} 삭제 실패 (이미 만료됐을 수 있음)`);
+      })
+    );
+
+    await Promise.allSettled(deletePromises);
+
+    // 청소 완료 후 목록 초기화
+    await AsyncStorage.removeItem(SESSION_HISTORY_KEY);
+    console.log("[Session] 이전 세션 정리 완료");
+  } catch (e) {
+    console.error("[Session] 이전 세션 정리 중 오류:", e);
+  }
+}
 
 /**
  * 새 세션을 생성하는 헬퍼 함수
- * (previousSessionId는 백엔드가 무시하지만 일단 전송)
  */
 async function createNewSession(previousSessionId = null) {
-  // ✅ 여기만 /session/ 으로 변경
   const endpoint = "/session/";
   const payload = {};
 
@@ -30,16 +74,18 @@ async function createNewSession(previousSessionId = null) {
   }
 
   const res = await api.post(endpoint, payload);
-  console.log("[Session] 새 세션 생성 응답 데이터:", res.data);
-
+  
   const rawId = res.data.id ?? res.data.session_id;
   if (rawId === undefined || rawId === null) {
-    console.log("[Session] 응답 데이터에 세션 ID가 없습니다.");
     throw new Error("세션 ID를 응답에서 찾을 수 없습니다.");
   }
 
   const newId = String(rawId);
   console.log("[Session] 새 세션 ID:", newId);
+
+  // ✅ 생성된 세션 ID를 로컬 저장소에 기록
+  await addSessionIdToHistory(newId);
+
   return newId;
 }
 
@@ -48,14 +94,17 @@ export function SessionProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // 1. 앱 시작 시: 항상 새 세션 생성
+  // 1. 앱 시작 시: 이전 세션 청소 후 -> 새 세션 생성
   useEffect(() => {
     const initSession = async () => {
       try {
         setLoading(true);
         console.log("====================================");
-        console.log("[Session] 앱 시작, 새 세션 초기화 시작");
+        
+        // ✅ 1-1. 이전 실행 때 남은 세션들 삭제 (청소)
+        await cleanupOldSessions();
 
+        console.log("[Session] 앱 시작, 새 세션 초기화 시작");
         const newId = await createNewSession(null);
 
         console.log("[Session] 앱 시작, 새 세션 생성 완료, ID:", newId);
@@ -74,8 +123,7 @@ export function SessionProvider({ children }) {
     initSession();
   }, []);
 
-  // ✅ 2. "세션 교체" 함수
-  // keywordsToTransfer (string[] 예: ["ㅎㅇ", "호호"])를 인자로 받음
+  // 2. 세션 교체 함수
   const resetSession = async (keywordsToTransfer = []) => {
     setLoading(true);
     setError(null);
@@ -84,12 +132,12 @@ export function SessionProvider({ children }) {
       const oldSessionId = sessionId;
       console.log("[Session] 세션 교체 시작 (이전 ID:", oldSessionId, ")");
 
-      // 1. 새 세션 생성
+      // 새 세션 생성 (여기서도 내부적으로 addSessionIdToHistory가 호출됨)
       const newId = await createNewSession(oldSessionId);
 
       console.log("[Session] 새 세션으로 교체 완료, New ID:", newId);
 
-      // 2. 새 세션에 키워드 재등록
+      // 키워드 재등록 로직
       if (keywordsToTransfer.length > 0) {
         console.log(
           `[Session] ${keywordsToTransfer.length}개의 키워드를 새 세션(${newId})에 재등록합니다.`
@@ -97,13 +145,8 @@ export function SessionProvider({ children }) {
         try {
           const payload = {
             session_id: newId,
-            keywords: keywordsToTransfer, // string[]
+            keywords: keywordsToTransfer,
           };
-          console.log(
-            "[Session] 키워드 재등록 요청: POST /keywords/",
-            payload
-          );
-          // (호출 URL: https://yeonhee.shop/api/keywords/)
           await api.post("/keywords/", payload);
           console.log(`[Session] 키워드 재등록 완료.`);
         } catch (e) {
@@ -111,20 +154,17 @@ export function SessionProvider({ children }) {
             "[Session] 키워드 재등록 실패:",
             e?.response?.data ?? e.message
           );
-          // 재등록에 실패해도 세션 교체는 완료된 것으로 간주.
         }
       } else {
         console.log("[Session] 재등록할 키워드가 없습니다.");
       }
 
-      // 3. 키워드 재등록까지 완료된 후, 앱 상태(sessionId)를 업데이트
       setSessionId(newId);
     } catch (e) {
       console.log("[Session] 세션 교체 실패:", e);
       setError(e);
-      // 세션 생성 자체를 실패하면 ID를 바꾸지 않음
     } finally {
-      setLoading(false); // 세션 교체 완료
+      setLoading(false);
     }
   };
 
@@ -142,7 +182,6 @@ export function SessionProvider({ children }) {
   );
 }
 
-// 훅
 export function useSession() {
   const ctx = useContext(SessionContext);
   if (!ctx) {
