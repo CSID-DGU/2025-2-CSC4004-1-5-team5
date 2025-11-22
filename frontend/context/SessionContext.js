@@ -1,3 +1,5 @@
+// FRONTEND/context/SessionContext.js (또는 .tsx)
+
 import React, {
   createContext,
   useContext,
@@ -14,7 +16,8 @@ const SessionContext = createContext(null);
  * (previousSessionId는 백엔드가 무시하지만 일단 전송)
  */
 async function createNewSession(previousSessionId = null) {
-  const endpoint = "/sessions/";
+  // ✅ 여기만 /session/ 으로 변경
+  const endpoint = "/session/";
   const payload = {};
 
   if (previousSessionId) {
@@ -45,16 +48,16 @@ export function SessionProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // 1. 앱 시작 시: 항상 새 세션 생성 (변경 없음)
+  // 1. 앱 시작 시: 항상 새 세션 생성
   useEffect(() => {
     const initSession = async () => {
       try {
         setLoading(true);
         console.log("====================================");
         console.log("[Session] 앱 시작, 새 세션 초기화 시작");
-        
+
         const newId = await createNewSession(null);
-        
+
         console.log("[Session] 앱 시작, 새 세션 생성 완료, ID:", newId);
         setSessionId(newId);
         setError(null);
@@ -71,45 +74,51 @@ export function SessionProvider({ children }) {
     initSession();
   }, []);
 
-  // ✅ 2. (수정) "세션 교체" 함수
+  // ✅ 2. "세션 교체" 함수
   // keywordsToTransfer (string[] 예: ["ㅎㅇ", "호호"])를 인자로 받음
   const resetSession = async (keywordsToTransfer = []) => {
     setLoading(true);
     setError(null);
 
     try {
-      const oldSessionId = sessionId; 
+      const oldSessionId = sessionId;
       console.log("[Session] 세션 교체 시작 (이전 ID:", oldSessionId, ")");
-      
+
       // 1. 새 세션 생성
       const newId = await createNewSession(oldSessionId);
 
       console.log("[Session] 새 세션으로 교체 완료, New ID:", newId);
-      
-      // 2. (추가) 새 세션에 키워드 재등록
+
+      // 2. 새 세션에 키워드 재등록
       if (keywordsToTransfer.length > 0) {
-        console.log(`[Session] ${keywordsToTransfer.length}개의 키워드를 새 세션(${newId})에 재등록합니다.`);
+        console.log(
+          `[Session] ${keywordsToTransfer.length}개의 키워드를 새 세션(${newId})에 재등록합니다.`
+        );
         try {
           const payload = {
             session_id: newId,
-            keywords: keywordsToTransfer // string[]
+            keywords: keywordsToTransfer, // string[]
           };
-          console.log('[Session] 키워드 재등록 요청: POST /keywords/', payload);
+          console.log(
+            "[Session] 키워드 재등록 요청: POST /keywords/",
+            payload
+          );
           // (호출 URL: https://yeonhee.shop/api/keywords/)
-          await api.post('/keywords/', payload);
+          await api.post("/keywords/", payload);
           console.log(`[Session] 키워드 재등록 완료.`);
         } catch (e) {
-           console.error('[Session] 키워드 재등록 실패:', e?.response?.data ?? e.message);
-           // 재등록에 실패해도 세션 교체는 완료된 것으로 간주.
+          console.error(
+            "[Session] 키워드 재등록 실패:",
+            e?.response?.data ?? e.message
+          );
+          // 재등록에 실패해도 세션 교체는 완료된 것으로 간주.
         }
       } else {
-         console.log("[Session] 재등록할 키워드가 없습니다.");
+        console.log("[Session] 재등록할 키워드가 없습니다.");
       }
 
-      // 3. (중요) 키워드 재등록까지 완료된 후, 앱 상태(sessionId)를 업데이트
-      // (이때 Keywords.js의 useEffect가 트리거되어 재등록된 키워드를 fetch함)
-      setSessionId(newId); 
-      
+      // 3. 키워드 재등록까지 완료된 후, 앱 상태(sessionId)를 업데이트
+      setSessionId(newId);
     } catch (e) {
       console.log("[Session] 세션 교체 실패:", e);
       setError(e);
@@ -123,7 +132,7 @@ export function SessionProvider({ children }) {
     sessionId,
     loading,
     error,
-    resetSession, // 수정된 resetSession 함수
+    resetSession,
   };
 
   return (
@@ -133,7 +142,7 @@ export function SessionProvider({ children }) {
   );
 }
 
-// 훅 (변경 없음)
+// 훅
 export function useSession() {
   const ctx = useContext(SessionContext);
   if (!ctx) {
