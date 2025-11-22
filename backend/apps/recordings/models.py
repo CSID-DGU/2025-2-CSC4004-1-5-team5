@@ -49,6 +49,8 @@ class AudioChunk(models.Model):
 
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="chunks")
     file_path = models.CharField(max_length=255)
+    cleaned_path = models.CharField(max_length=255, null=True, blank=True)
+    
     duration = models.FloatField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     created_at = models.DateTimeField(auto_now_add=True)

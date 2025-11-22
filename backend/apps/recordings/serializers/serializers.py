@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Session, AudioChunk
+from ..models import Session, AudioChunk
 from apps.broadcasts.models import Broadcast
 from apps.keywords.models import Alert
 
@@ -54,16 +54,4 @@ class BroadcastSerializer(serializers.ModelSerializer):
             "full_text",
             "keywords_detected",
             "confidence_avg"
-        ]
-
-
-class ResultSerializer(serializers.ModelSerializer):
-    timeline = BroadcastSerializer(source="broadcasts", many=True)
-
-    class Meta:
-        model = Session
-        fields = [
-            "id",
-            "progress",
-            "timeline"
         ]

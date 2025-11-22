@@ -1,10 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import (
-    SessionViewSet,
-    AudioChunkViewSet,
-)
-from .sse.stream import session_event_stream
+from .views.session import SessionViewSet
+from .views.audio_chunk import AudioChunkViewSet
+from .views.audio_save import SaveCleanAudio
 
 app_name = "recordings"
 
@@ -15,4 +13,5 @@ router.register(r"audio", AudioChunkViewSet, basename="audio")
 urlpatterns = [
     # 기본 REST 라우터
     path("", include(router.urls)),
+    path("save-clean-audio/", SaveCleanAudio.as_view()),
 ]

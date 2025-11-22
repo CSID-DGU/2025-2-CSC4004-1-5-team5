@@ -14,7 +14,7 @@ def process_audio_chunk(chunk_id):
 
     # 1) AI 서버(STT + DCCRNet 호출)
     file_path = chunk.file_path
-    result = call_ai_server(file_path)
+    result = call_ai_server(file_path,chunk_id)
 
     text = result.get("text", "")
     confidence = result.get("confidence", 0)
