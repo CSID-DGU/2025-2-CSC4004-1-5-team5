@@ -1,3 +1,4 @@
+from datetime import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -50,17 +51,28 @@ class SessionViewSet(viewsets.ViewSet):
             return Response({"detail": "Session이 만료되었습니다."}, status=410)
 
         alerts = Alert.objects.filter(keyword__session=session)
+        
         done = session.chunks.filter(status="COMPLETE").count()
+        total = session.chunks.count()
+        
+        # ==== 세션 자동 종료 판정 ====
+        if total > 0 and done >= total:
+            if session.status != "COMPLETE":
+                session.status = "COMPLETE"
+                session.save()
+        else:
+            session.status = "RECORDING"
+            session.save()
 
         return Response({
             "session_id": pk,
             "status": session.status,
             "done_chunks": done,
-            "total_broadcasts": session.broadcasts.count(),
+            "total_chunks": total,
             "total_keywords": alerts.count(),
             "keyword_alerts": [
                 {
-                    "broadcast_id": a.broadcast.id,
+                    "broadcast_id": a.broadcast.id if a.broadcast else None,
                     "keyword": a.keyword.word,
                     "detected_at": a.detected_at,
                 }
