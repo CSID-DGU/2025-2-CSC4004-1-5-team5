@@ -96,14 +96,13 @@ def summarize_text(text: str) -> str:
 
 def is_continuation(prev: str, current: str) -> bool:
     prompt = f"""
-아래 두 문장이 **같은 지하철 안내방송**의 연속인지 판단하세요.
+아래 두 문장이 같은 지하철 안내방송의 연속인지 판단하세요.
 
 규칙:
-1) 앞 문장의 끝이 단어가 끊긴 경우 → 다음 문장이 계속 이어지는 경우 True
-    예: "이번 역은 구" + "로역입니다." → 이어짐
-2) 문맥상 한 안내방송으로 자연스럽게 이어지면 True
-3) 서로 다른 안내 내용이면 False
-4) 결과는 True 또는 False만 출력
+1) 앞 문장의 끝이 단어가 끊긴 경우 → 다음 문장이 자연스럽게 이어지면 True
+2) 문맥상 하나의 안내방송으로 연속되는지만 판단
+3) 다르면 False
+4) 답변은 반드시 'True' 또는 'False' 딱 한 단어만 출력
 
 [문장 A]
 {prev}
@@ -111,13 +110,15 @@ def is_continuation(prev: str, current: str) -> bool:
 [문장 B]
 {current}
 
-답변: 
+답변:
 """
 
     res = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=5
     )
 
     text = res.choices[0].message.content.strip().lower()
-    return "true" in text
+    return text == "true"
+

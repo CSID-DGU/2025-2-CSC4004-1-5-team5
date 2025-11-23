@@ -12,6 +12,7 @@ def process_audio_chunk(chunk_id):
     chunk = AudioChunk.objects.get(id=chunk_id)
     session = chunk.session 
 
+    # --- 1) AI 서버 호출 ---
     result = call_ai_server(chunk.file_path, chunk_id)
     text = result.get("text", "")
     confidence = result.get("confidence", 0)
@@ -20,40 +21,42 @@ def process_audio_chunk(chunk_id):
     if text.strip() == "":
         chunk.status = "COMPLETE"
         chunk.save()
-        update_session_progress(session)
-        push_event(session.id, {"type": "progress", "progress": session.progress})
+        
+        # 실시간 청크 개수 이벤트 보내기
+        update_session_chunk_count(session)
         return {"text": "", "is_broadcast": False}
 
-    #chunk 단위 즉시 키워드 감지
-    detected = detect_keywords_in_chunk(session, text)
+    # --- 3) Broadcast 저장 ---
+    broadcast = Broadcast.objects.create(
+        session=session,
+        audio_chunk=chunk,
+        full_text=text,
+        confidence_avg=confidence,
+    )
 
-    # chunk 완료 표시
+    # --- 4) 키워드 즉시 감지 + Broadcast에 저장 ---
+    detected = detect_keywords_in_chunk(session, text, broadcast)
+
+    # --- 5) chunk 완료 ---
     chunk.status = "COMPLETE"
     chunk.save()
 
-    # 진행률 SSE
-    update_session_progress(session)
-    push_event(session.id, {"type": "progress", "progress": session.progress})
+    # --- 6) SSE: 처리된 chunk 개수 push ---
+    update_session_chunk_count(session)
 
     return {
         "text": text,
-        "is_broadcast": len(detected) > 0
+        "is_broadcast": True,
+        "detected_keywords": [kw.word for kw in detected] 
     }
 
 
 
-def update_session_progress(session):
-    """전체 chunk 대비 완료 chunk 비율 계산"""
-    total = session.chunks.count()
+def update_session_chunk_count(session):
     done = session.chunks.filter(status="COMPLETE").count()
 
-    if total == 0:
-        session.progress = 0
-    else:
-        session.progress = round((done / total) * 100, 2)
-
-    # 100% 되면 상태도 COMPLETE로 변경
-    if session.progress == 100:
-        session.status = "COMPLETE"
-
-    session.save()
+    # SSE로 실시간 전달
+    push_event(session.id, {
+        "type": "chunk_count",
+        "done": done,
+    })
