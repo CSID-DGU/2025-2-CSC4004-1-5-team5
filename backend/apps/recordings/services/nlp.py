@@ -1,5 +1,6 @@
 import os
-import difflib
+import hgtk
+from difflib import SequenceMatcher
 from openai import OpenAI
 from .station_name import STATION_NAMES
 
@@ -9,65 +10,64 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # -------------------------------------------------------
 # 1) 역명 후보 찾기 (부분 일치 + 오타 교정)
 # -------------------------------------------------------
-def guess_station_name(text: str):
-    """
-    STT에서 나올 수 있는 역 발음 오타를 기반으로
-    가장 유사한 역명을 찾아냄.
-    """
 
-    # 전처리
+def jamo(text):
+    try:
+        return hgtk.text.decompose(text)
+    except:
+        return text
+
+def jamo_similarity(a, b):
+    return SequenceMatcher(None, jamo(a), jamo(b)).ratio()
+
+def guess_station_name(text: str):
     t = text.replace(" ", "").replace("역", "")
 
-    # 1) 부분 매칭
-    candidates = [s for s in STATION_NAMES if t in s.replace(" ", "")]
-    if candidates:
-        return candidates[0]
+    # 우선 부분 일치
+    for name in STATION_NAMES:
+        if t in name.replace(" ", ""):
+            return name
 
-    # 2) difflib 기반 유사도 매칭 (0.6 이상만)
-    scored = difflib.get_close_matches(t, STATION_NAMES, n=1, cutoff=0.6)
-    return scored[0] if scored else None
+    # 자모 기반 유사도
+    best = None
+    best_score = 0
+
+    for name in STATION_NAMES:
+        score = jamo_similarity(t, name)
+        if score > best_score:
+            best = name
+            best_score = score
+
+    return best if best_score > 0.55 else None
+
 
 
 # -------------------------------------------------------
 # 2) STT 문장 보정 + 역명 반영 버전
 # -------------------------------------------------------
-def correct_transcription_v2(raw_text: str) -> str:
-    """
-    STT 결과를 기반으로:
-    - 역명 유사 매칭
-    - 문장 보정
-    - 안내방송 스타일 재구성
-    """
-
-    # 역명 후보 찾기
+def correct_transcription_v2(raw_text: str):
     station = guess_station_name(raw_text)
-
-    station_part = f"추정 역명 후보: {station}" if station else "추정 역명 없음"
+    station_list = ", ".join([station]) if station else "없음"
 
     prompt = f"""
-당신은 한국 지하철 안내방송을 복원하는 전문가입니다.
+당신은 '지하철 안내방송 복원 전문가'입니다.
 
-아래 텍스트는 STT로 받아온 것으로,
-문장 중간 끊김 / 오타 / 단어 잘림이 존재합니다.
+아래 STT 텍스트를 읽고 다음 규칙으로 **정확한 안내방송**을 재구성하세요:
 
-당신은 다음을 수행해야 합니다:
-
-1) 끊긴 문장을 자연스럽게 복원하기
-2) 지하철 안내방송 스타일로 문장을 재구성하기
-3) 역명은 아래의 후보가 맞으면 반영하고, 애매하면 가장 자연스러운 실제 역명으로 보정하기
-4) 문장 패턴을 꼭 유지하기:
+규칙:
+1) 문장 구조는 아래 3개 중 필요한 것만 사용:
     - "이번 역은 ___역입니다."
     - "내리실 문은 ___쪽입니다."
     - "환승하실 승객께서는 ___로 이동하시기 바랍니다."
-5) 절대 엉뚱한 역명은 생성하지 말기
-6) 출력은 **최종 재구성된 방송 문장만**
+2) 역명은 반드시 아래 후보 중에서만 선택:
+    → [{station_list}]
+3) 후보가 '없음'이면 역명을 생성하지 말고 문장에서 추출 가능한 경우만 사용.
+4) 절대 존재하지 않는 역명을 만들지 말 것.
+5) 잘린 문장은 자연스럽게 복원.
+6) 출력은 안내방송 문장만 작성.
 
-===========================
-[STT 원문]
+[STT 텍스트]
 {raw_text}
-
-[{station_part}]
-===========================
 
 [재구성된 안내방송]
 """
@@ -77,6 +77,7 @@ def correct_transcription_v2(raw_text: str) -> str:
         messages=[{"role": "user", "content": prompt}]
     )
     return res.choices[0].message.content.strip()
+
 
 
 # -------------------------------------------------------
