@@ -26,8 +26,23 @@ class Keyword(models.Model):
 #  Alert (감지 로그 — 내부 전용)
 # ==========================================================
 class Alert(models.Model):
-    keyword = models.ForeignKey(Keyword, on_delete=models.CASCADE, related_name="alerts")
-    broadcast = models.ForeignKey(Broadcast, on_delete=models.CASCADE, related_name="alerts")
+    session = models.ForeignKey(
+        "recordings.Session",
+        on_delete=models.CASCADE,
+        related_name="alerts"
+    )
+    
+    keyword = models.ForeignKey(
+        Keyword, 
+        on_delete=models.CASCADE, 
+        related_name="alerts")
+    
+    broadcast = models.ForeignKey(
+        Broadcast, 
+        on_delete=models.CASCADE, 
+        related_name="alerts",
+        null=True, blank=True    
+        )
     detected_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -36,4 +51,4 @@ class Alert(models.Model):
         verbose_name_plural = "Alerts"
 
     def __str__(self):
-        return f"[{self.id}] keyword='{self.keyword.word}', broadcast={self.broadcast_id}, time={self.detected_at:%H:%M:%S}"
+        return f"[{self.id}] session={self.session_id}, keyword='{self.keyword.word}', broadcast={self.broadcast_id}, time={self.detected_at:%H:%M:%S}"

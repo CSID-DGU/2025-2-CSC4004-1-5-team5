@@ -12,6 +12,7 @@ def process_audio_chunk(chunk_id):
     chunk = AudioChunk.objects.get(id=chunk_id)
     session = chunk.session 
 
+    # --- 1) AI 서버 호출 ---
     result = call_ai_server(chunk.file_path, chunk_id)
     text = result.get("text", "")
     confidence = result.get("confidence", 0)
@@ -25,20 +26,28 @@ def process_audio_chunk(chunk_id):
         update_session_chunk_count(session)
         return {"text": "", "is_broadcast": False}
 
-    #chunk 단위 즉시 키워드 감지
-    detected = detect_keywords_in_chunk(session, text)
+    # --- 3) Broadcast 저장 ---
+    broadcast = Broadcast.objects.create(
+        session=session,
+        audio_chunk=chunk,
+        full_text=text,
+        confidence_avg=confidence,
+    )
 
-    # chunk 완료 표시
+    # --- 4) 키워드 즉시 감지 + Broadcast에 저장 ---
+    detected = detect_keywords_in_chunk(session, text, broadcast)
+
+    # --- 5) chunk 완료 ---
     chunk.status = "COMPLETE"
     chunk.save()
 
-    # 실시간 청크 개수 이벤트 보내기
+    # --- 6) SSE: 처리된 chunk 개수 push ---
     update_session_chunk_count(session)
 
     return {
         "text": text,
         "is_broadcast": True,
-        "detected_keywords": [a.word.word for a in detected]
+        "detected_keywords": [kw.word for kw in detected] 
     }
 
 
