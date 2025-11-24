@@ -1,3 +1,4 @@
+// screens/SettingsScreen.js
 import { useState } from 'react';
 import {
   StyleSheet,
@@ -6,7 +7,11 @@ import {
   Pressable,
   Image,
   ScrollView,
+  Alert,
+  Linking,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { useSettings } from '../context/SettingsContext';
 
 export default function SettingsScreen({ onClose }) {
@@ -53,6 +58,54 @@ export default function SettingsScreen({ onClose }) {
   const selectContrast = (v) => persist({ ...settings, contrast: v });
   const selectWeight = (v) => persist({ ...settings, fontWeight: v });
 
+  // 알림 테스트용
+  const scheduleTestNotification = async () => {
+    console.log('테스트 알림을 1초 후에 전송합니다...');
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🔔 알림 테스트',
+        body: '알림 권한이 성공적으로 설정되었습니다!',
+        sound: 'default',
+      },
+      trigger: { seconds: 1 },
+    });
+  };
+
+  const toggleAlerts = async () => {
+    if (settings.alertsEnabled) {
+      persist({ ...settings, alertsEnabled: false });
+      console.log('알림이 비활성화되었습니다.');
+      return;
+    }
+    if (!Device.isDevice) {
+      Alert.alert('알림 테스트', '시뮬레이터에서는 알림 권한을 요청할 수 없습니다.');
+      persist({ ...settings, alertsEnabled: true });
+      return;
+    }
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      console.log('알림 권한을 요청합니다...');
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus === 'granted') {
+      console.log('알림 권한이 허용되었습니다.');
+      persist({ ...settings, alertsEnabled: true });
+      await scheduleTestNotification();
+    } else {
+      console.log('알림 권한이 거부되었습니다.');
+      Alert.alert(
+        '알림 권한 필요',
+        '키워드 알림을 받으려면 앱 설정에서 권한을 허용해야 합니다.',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설정으로 이동', onPress: () => Linking.openSettings() },
+        ],
+      );
+    }
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.bg }]}>
       {/* 헤더 */}
@@ -70,7 +123,30 @@ export default function SettingsScreen({ onClose }) {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* ✅ 알림 설정 섹션 삭제됨 */}
+        {/* 🔔 알림 설정 섹션 (MainScreen에서 이동) */}
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.cardTitleRow}>
+            <Image
+              source={require('../assets/alarm.png')}
+              style={styles.leadImg}
+            />
+            <Text style={[styles.cardTitle, t(theme, 16)]}>알림 설정</Text>
+          </View>
+          <View style={styles.rowBetween}>
+            <View>
+              <Text style={[styles.label, t(theme, 13)]}>알림 활성화</Text>
+              <Text style={[styles.helpText, ts(theme, 12)]}>
+                키워드 감지 시 알림을 받습니다
+              </Text>
+            </View>
+            <SwitchLike on={settings.alertsEnabled} onPress={toggleAlerts} />
+          </View>
+          <View style={styles.tipBox}>
+            <Text style={[styles.tipText, ts(theme, 12)]}>
+              💡 알림이 켜져 있어야 등록된 키워드 감지 시 알림이 옵니다.
+            </Text>
+          </View>
+        </View>
 
         {/* 접근성 설정 */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -159,7 +235,7 @@ export default function SettingsScreen({ onClose }) {
 
           <View style={[styles.tipBox, { marginTop: 16 }]}>
             <Text style={[styles.tipText, ts(theme, 12)]}>
-              💡 설정은 자동으로 저장되며 앱을 다시 열어도 유지됩니다.
+              설정은 자동으로 저장되며 앱을 다시 열어도 유지됩니다.
             </Text>
           </View>
         </View>
@@ -169,6 +245,14 @@ export default function SettingsScreen({ onClose }) {
 }
 
 // 헬퍼 컴포넌트 및 스타일
+function SwitchLike({ on, onPress }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.switch, on && styles.switchOn]}>
+      <View style={[styles.knob, on && styles.knobOn]} />
+    </Pressable>
+  );
+}
+
 function RadioRow({ label, selected, onPress, theme }) {
   return (
     <Pressable
@@ -289,4 +373,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   radioLabel: {},
+  switch: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#d1d5db',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  switchOn: { backgroundColor: '#111827' },
+  knob: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    transform: [{ translateX: 0 }],
+  },
+  knobOn: { transform: [{ translateX: 20 }] },
 });

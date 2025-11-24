@@ -1,5 +1,5 @@
 // screens/MainScreen.js
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,11 +8,8 @@ import {
   Text,
   Image,
   Pressable,
-  Linking,
 } from 'react-native';
-import * as Sharing from 'expo-sharing';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 
 // expo-audio용 API 임포트
 import {
@@ -31,6 +28,8 @@ import BroadcastHistory from '../components/BroadcastHistory';
 import SettingsScreen from './SettingsScreen';
 import { useSettings } from '../context/SettingsContext';
 import { useSession } from '../context/SessionContext';
+import { useKeywordAlert } from '../hooks/useKeywordAlert';
+import CoreInfo from '../components/CoreInfo';
 
 // 알림 핸들러 설정
 Notifications.setNotificationHandler({
@@ -41,42 +40,26 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// 테스트 알림 전송 함수
-async function scheduleTestNotification() {
-  console.log('테스트 알림을 1초 후에 전송합니다...');
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: '🔔 알림 테스트',
-      body: '알림 권한이 성공적으로 설정되었습니다!',
-      sound: 'default',
-    },
-    trigger: { seconds: 1 },
-  });
-}
-
 const CHUNK_DURATION_MS = 10000;  // 10초
 const MAX_RECORDING_MS = 90000;   // 1분 30초
 
 export default function MainScreen() {
-  const { theme, settings, apply } = useSettings();
+  const { theme, settings } = useSettings();
   const {
     sessionId,
     resetSession,
     loading: sessionLoading,
-    uploadAudioChunk, // ✅ SessionContext에서 가져온 청크 업로드 함수
+    uploadAudioChunk,
+    fetchSessionResults,     // ✅ 결과 조회 함수 사용
   } = useSession();
 
   const [route, setRoute] = useState('home');
   const [tab, setTab] = useState('realtime');
   const [recording, setRecording] = useState(false);
-
-  // 여기 keywords는 항상 ["구로", "나가는 문", ...] 형태의 string 배열
   const [keywords, setKeywords] = useState([]);
 
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const intervalRef = useRef(null);
-
-  // 누적 녹음 시간 (1분 30초 제한용)
   const [elapsedMs, setElapsedMs] = useState(0);
   const elapsedRef = useRef(0);
   const recordingRef = useRef(false);
@@ -93,7 +76,6 @@ export default function MainScreen() {
     [theme.scale],
   );
 
-  // unmount 시 interval 정리
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
@@ -102,48 +84,36 @@ export default function MainScreen() {
     };
   }, []);
 
-  // 설정 저장 헬퍼
-  const persist = (next) => apply(next);
+  // 🔔 키워드 감지 시 실제 OS 알림 보내기
+  const handleKeywordAlert = useCallback(
+    async ({ keyword, detectedAt }) => {
+      // 설정에서 알림이 꺼져 있으면 무시
+      if (!settings.alertsEnabled) {
+        console.log('[KeywordAlert] 알림 비활성화 상태, 무시');
+        return;
+      }
 
-  // 알림 활성화/권한 요청
-  const toggleAlerts = async () => {
-    if (settings.alertsEnabled) {
-      persist({ ...settings, alertsEnabled: false });
-      console.log('알림이 비활성화되었습니다.');
-      return;
-    }
+      console.log('[KeywordAlert] 키워드 감지:', keyword, detectedAt);
 
-    if (!Device.isDevice) {
-      Alert.alert('알림 테스트', '시뮬레이터에서는 알림 권한을 요청할 수 없습니다.');
-      persist({ ...settings, alertsEnabled: true });
-      return;
-    }
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🔔 키워드 감지',
+            body: `"${keyword}" 키워드가 감지되었습니다.`,
+            sound: 'default',
+          },
+          // null → 즉시 발송 (포그라운드/백그라운드 상단 알림)
+          trigger: null,
+        });
+      } catch (e) {
+        console.log('[KeywordAlert] 알림 전송 실패:', e);
+      }
+    },
+    [settings.alertsEnabled],
+  );
 
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      console.log('알림 권한을 요청합니다...');
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus === 'granted') {
-      console.log('알림 권한이 허용되었습니다.');
-      persist({ ...settings, alertsEnabled: true });
-      await scheduleTestNotification();
-    } else {
-      console.log('알림 권한이 거부되었습니다.');
-      Alert.alert(
-        '알림 권한 필요',
-        '키워드 알림을 받으려면 앱 설정에서 권한을 허용해야 합니다.',
-        [
-          { text: '취소', style: 'cancel' },
-          { text: '설정으로 이동', onPress: () => Linking.openSettings() },
-        ],
-      );
-    }
-  };
+  // ✅ SSE로 /session/{id}/stream/ 구독해서 keyword_alert 받기
+  useKeywordAlert(handleKeywordAlert);
 
   // --- 녹음 관련 로직 ---
 
@@ -174,6 +144,28 @@ export default function MainScreen() {
     }
   };
 
+  // ✅ 공통 결과 이동 알림 함수
+  const askMoveToHistory = (title, message) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: '계속하기', style: 'cancel' },
+        {
+          text: '결과 보기',
+          onPress: async () => {
+            // 🔹 직전 세션(lastSessionId 기준) 결과 조회 → SessionContext.sessionResults에 저장
+            await fetchSessionResults();
+            // 🔹 탭을 history로 전환 (BroadcastHistory + CoreInfo 둘 다 최신 결과 사용)
+            setTab('history');
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  // 1. 시간 초과로 인한 자동 종료
   const handleAutoStopAtLimit = () => {
     console.log('최대 녹음 시간(1분 30초) 도달, 자동 종료');
 
@@ -185,25 +177,15 @@ export default function MainScreen() {
     setRecording(false);
     recordingRef.current = false;
 
-    Alert.alert(
-      '녹음 시간이 제한되었습니다',
-      '실시간 분석 품질을 위해 한 번에 최대 1분 30초까지만 사용할 수 있습니다.\n\n' +
-        '지금까지 녹음한 내용을 기준으로 결과 화면으로 이동하시겠습니까?',
-      [
-        { text: '취소', style: 'cancel' },
-        {
-          text: '결과 보기',
-          onPress: () => {
-            // 탭을 결과(방송 내역) 쪽으로 이동
-            setTab('history'); // RealtimeHistoryTabs에서 사용하는 실제 값에 맞게 조정
-          },
-        },
-      ],
+    askMoveToHistory(
+      '녹음 시간 종료',
+      '최대 녹음 시간(1분 30초)에 도달했습니다.\n지금까지 녹음된 내용을 확인하시겠습니까?'
     );
   };
 
+  // 2. 사용자가 버튼 눌러서 수동 종료 (+시작)
   const toggleRecording = async () => {
-    // 이미 녹음 중이면 → 녹음 종료 및 세션 리셋
+    // 이미 녹음 중이면 → 녹음 종료
     if (recording) {
       console.log('전체 녹음을 중지합니다...');
       setRecording(false);
@@ -215,22 +197,22 @@ export default function MainScreen() {
       }
 
       try {
-        // 마지막 청크도 서버로 전송 (길이는 서버에서 계산)
+        // 마지막 청크도 서버로 전송
         await audioRecorder.stop();
         const uri = audioRecorder.uri;
         console.log('마지막 청크 저장 완료:', uri);
         await uploadAudioChunk(uri, null);
 
-        // 필요하면 공유 (디버깅용)
-        if (uri && (await Sharing.isAvailableAsync())) {
-          await Sharing.shareAsync(uri);
-        }
-
         console.log('녹음 종료됨. 새 세션으로 교체를 요청합니다...');
-        await resetSession(keywords);
+        await resetSession(keywords); // 세션 교체 (결과 조회용 ID 저장됨)
 
         elapsedRef.current = 0;
         setElapsedMs(0);
+
+        askMoveToHistory(
+          '녹음 종료',
+          '녹음이 종료되었습니다.\n지금까지 녹음된 결과를 확인하시겠습니까?'
+        );
       } catch (error) {
         console.error('마지막 청크 중지/업로드 또는 세션 리셋 실패:', error);
       }
@@ -255,7 +237,6 @@ export default function MainScreen() {
 
     await startNewChunk();
 
-    // 10초마다: 이전 청크 stop+업로드 → 누적 시간 증가 → 한도 확인 → 새 청크 시작
     intervalRef.current = setInterval(async () => {
       if (!recordingRef.current) return;
 
@@ -295,31 +276,10 @@ export default function MainScreen() {
 
         {tab === 'realtime' ? (
           <>
-            {/* 알림 설정 카드 */}
-            <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-              <View style={styles.cardTitleRow}>
-                <Image
-                  source={require('../assets/alarm.png')}
-                  style={styles.leadImg}
-                />
-                <Text style={[styles.cardTitle, t(theme, 16)]}>알림 설정</Text>
-              </View>
-              <View style={styles.rowBetween}>
-                <View>
-                  <Text style={[styles.label, t(theme, 13)]}>알림 활성화</Text>
-                  <Text style={[styles.helpText, ts(theme, 12)]}>
-                    키워드 감지 시 알림을 받습니다
-                  </Text>
-                </View>
-                <SwitchLike on={settings.alertsEnabled} onPress={toggleAlerts} />
-              </View>
-              <View style={styles.tipBox}>
-                <Text style={[styles.tipText, ts(theme, 12)]}>
-                  💡 알림이 켜져 있어야 등록된 키워드 감지 시 알림이 옵니다.
-                </Text>
-              </View>
-            </View>
+            {/* 🔹 CoreInfo: 서버 결과 summary / info 표시 */}
+            <CoreInfo />
 
+            {/* 키워드 설정 */}
             <Keywords onChange={setKeywords} />
 
             {recording && <ListeningStatus />}
@@ -338,15 +298,7 @@ export default function MainScreen() {
   );
 }
 
-// --- 헬퍼 컴포넌트 및 스타일 ---
-
-function SwitchLike({ on, onPress }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.switch, on && styles.switchOn]}>
-      <View style={[styles.knob, on && styles.knobOn]} />
-    </Pressable>
-  );
-}
+// --- 헬퍼 스타일 ---
 
 const t = (theme, base) => ({
   fontSize: Math.round(base * theme.scale),
@@ -383,21 +335,4 @@ const styles = StyleSheet.create({
   helpText: {},
   tipBox: { backgroundColor: '#EEF6FF', borderRadius: 10, padding: 10 },
   tipText: {},
-  switch: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#d1d5db',
-    padding: 2,
-    justifyContent: 'center',
-  },
-  switchOn: { backgroundColor: '#111827' },
-  knob: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    transform: [{ translateX: 0 }],
-  },
-  knobOn: { transform: [{ translateX: 20 }] },
 });
