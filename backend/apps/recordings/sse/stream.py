@@ -12,7 +12,6 @@ def event_stream(session_id):
         if message["type"] == "message":
             data = message["data"].decode("utf-8")
             yield f"data: {data}\n\n"
-        time.sleep(0.01)
 
 
 def session_event_stream(request, session_id):
