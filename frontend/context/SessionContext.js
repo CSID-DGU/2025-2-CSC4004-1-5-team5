@@ -90,10 +90,13 @@ async function createNewSession(previousSessionId = null) {
 }
 
 export function SessionProvider({ children }) {
-  const [sessionId, setSessionId] = useState(null);       // 현재 사용 중인 세션
+  const [sessionId, setSessionId] = useState(null);        // 현재 사용 중인 세션
   const [lastSessionId, setLastSessionId] = useState(null); // 직전에 종료된 세션 (결과 조회용)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // ✅ 추가: 마지막으로 조회된 세션 결과 (CoreInfo 등에서 사용)
+  const [sessionResults, setSessionResults] = useState(null);
 
   // 앱 시작 시: 이전 세션 정리 후 새 세션 생성
   useEffect(() => {
@@ -255,6 +258,10 @@ export function SessionProvider({ children }) {
           "[Session] 결과 조회 완료:",
           JSON.stringify(res.data, null, 2)
         );
+
+        // ✅ CoreInfo 등에서 사용할 수 있도록 상태에 저장
+        setSessionResults(res.data);
+
         return res.data;
       } catch (e) {
         // 🔥 [중요] 여기서 에러를 다시 throw하면 녹음 종료 로직 전체가 멈춥니다.
@@ -263,8 +270,7 @@ export function SessionProvider({ children }) {
           "[Session] 결과 조회 실패 (프로세스 계속 진행):",
           e?.response?.data ?? e.message
         );
-        // throw e; // <--- 삭제함
-        return null; // <--- 추가함: 실패 시에도 null 반환
+        return null;
       }
     },
     [sessionId, lastSessionId]
@@ -278,6 +284,9 @@ export function SessionProvider({ children }) {
     resetSession,
     uploadAudioChunk,
     fetchSessionResults,
+
+    // ✅ CoreInfo에서 사용
+    sessionResults,
   };
 
   return (
