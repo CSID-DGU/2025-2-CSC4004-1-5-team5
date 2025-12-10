@@ -5,21 +5,17 @@ import { useSettings } from '../context/SettingsContext';
 import { useSession } from '../context/SessionContext';
 import { api } from '../api/instance';
 
-// 문자열 비교용: 대소문자 무시, 앞의 # 제거
 const norm = (s) => String(s || '').trim().replace(/^#/, '').toLowerCase();
 
 export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
   const { theme } = useSettings();
-  const { sessionId, fetchSessionResults } = useSession();
 
-  // 🔹 서버에서 가져온 키워드를 보관
+  // ⬇️ 여기에서 sessionResults만 받아오면 됨
+  const { sessionResults, sessionId } = useSession();
+
+  // 서버에서 키워드 가져오는 부분은 유지
   const [serverKeywords, setServerKeywords] = useState([]);
 
-  // 🔹 세션 결과 (summary + timeline)
-  const [results, setResults] = useState(null);
-  const [loadingResults, setLoadingResults] = useState(false);
-
-  // 🔹 세션 ID로 키워드 GET
   const fetchKeywords = async () => {
     if (!sessionId) {
       console.log('[BroadcastHistory] 세션 ID 없음, 키워드 조회 건너뜀');
@@ -34,12 +30,6 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
       const res = await api.get('/keywords/', {
         params: { session_id: sessionId },
       });
-
-      console.log('[BroadcastHistory] 키워드 조회 status:', res.status);
-      console.log(
-        '[BroadcastHistory] 키워드 조회 데이터:',
-        JSON.stringify(res.data, null, 2),
-      );
 
       const rawList = Array.isArray(res.data?.keywords)
         ? res.data.keywords
@@ -63,58 +53,24 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
     }
   };
 
-  // 🔹 세션 결과 GET: /session/{id}/results/
-  const fetchResults = async () => {
-    if (!sessionId) {
-      console.log('[BroadcastHistory] 세션 ID 없음, 결과 조회 건너뜀');
-      return;
-    }
-
-    try {
-      setLoadingResults(true);
-      const data = await fetchSessionResults();
-      setResults(data);
-    } catch (e) {
-      console.warn(
-        '[BroadcastHistory] 결과 조회 실패:',
-        e?.response?.data ?? e.message,
-      );
-    } finally {
-      setLoadingResults(false);
-    }
-  };
-
+  // 키워드만 조회
   useEffect(() => {
     fetchKeywords();
-    fetchResults();
   }, [sessionId]);
 
-  // 🔹 실제로 사용할 키워드:
-  //    - 부모에서 props로 넘겨주면 그걸 우선 사용
-  //    - 안 넘겨주면 서버에서 가져온 서버 키워드 사용
+  // ❗❗ 여기로 results를 가져옴
+  const results = sessionResults;
+
+  // effective keywords
   const effectiveKeywords =
     Array.isArray(keywords) && keywords.length > 0
       ? keywords
       : serverKeywords;
 
-  // 방송 본문에서 매칭된 키워드 목록 추출 (텍스트 기반 fallback)
-  const extractMatchedKeywordsFromText = (txt, kws) => {
-    const t = String(txt || '').toLowerCase();
-    const seen = new Set();
-    const hits = [];
-    kws.forEach((kw) => {
-      const k = norm(kw);
-      if (!k) return;
-      if (t.includes(k) && !seen.has(k)) {
-        seen.add(k);
-        hits.push(k);
-      }
-    });
-    return hits;
-  };
-
-  // 🔹 timeline에서 사용할 아이템들 구성
-  const timeline = Array.isArray(results?.timeline) ? results.timeline : [];
+  // timeline
+  const timeline = Array.isArray(results?.timeline)
+    ? results.timeline
+    : [];
 
   const items = timeline.slice(0, maxCount);
 
@@ -151,13 +107,10 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
             color: theme.colors.sub,
           }}
         >
-          {loadingResults
-            ? '불러오는 중...'
-            : `${items.length}/${totalCount}건`}
+          {`${items.length}/${totalCount}건`}
         </Text>
       </View>
 
-      {/* 전체 요약이 있으면 위에 살짝 보여주기 (선택) */}
       {summaryText ? (
         <View
           style={[
@@ -177,17 +130,15 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
       ) : null}
 
       {items.map((it) => {
-        // API 응답 구조에 맞게 필드 정리
         const id = String(it.announcement_id ?? it.id ?? '');
         const text = it.full_text ?? '';
 
-        // ▸ 서버에서 감지한 키워드 (keywords_detected)
         const detected = Array.isArray(it.keywords_detected)
           ? it.keywords_detected
           : [];
 
-        // ▸ effectiveKeywords와 비교해서 실제 매칭되는 키워드만 사용
         let matched = [];
+
         if (detected.length > 0 && effectiveKeywords.length > 0) {
           const set = new Set(effectiveKeywords.map(norm));
           matched = detected
@@ -195,8 +146,21 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
             .filter((k) => set.has(norm(k)));
         }
 
-        // ▸ 만약 keywords_detected가 비어 있으면,
-        //    예전처럼 본문 텍스트 기준으로 매칭 시도 (fallback)
+        const extractMatchedKeywordsFromText = (txt, kws) => {
+          const t = String(txt || '').toLowerCase();
+          const seen = new Set();
+          const hits = [];
+          kws.forEach((kw) => {
+            const k = norm(kw);
+            if (!k) return;
+            if (t.includes(k) && !seen.has(k)) {
+              seen.add(k);
+              hits.push(k);
+            }
+          });
+          return hits;
+        };
+
         if (matched.length === 0 && effectiveKeywords.length > 0) {
           matched = extractMatchedKeywordsFromText(text, effectiveKeywords);
         }
@@ -214,7 +178,6 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
               },
             ]}
           >
-            {/* 시간/순번 표현 (API에 시간이 없으므로 순번 정도만) */}
             <View style={styles.timeRow}>
               <Text
                 style={{
@@ -240,7 +203,6 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
               )}
             </View>
 
-            {/* 본문 */}
             <Text
               style={{
                 fontSize: Math.round(14 * theme.scale),
@@ -251,7 +213,6 @@ export default function BroadcastHistory({ keywords = [], maxCount = 5 }) {
               {text}
             </Text>
 
-            {/* 키워드 칩 */}
             {hasMatch && (
               <View style={styles.rowChips}>
                 {matched.map((k, i) => (
