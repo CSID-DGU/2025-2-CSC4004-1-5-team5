@@ -23,6 +23,7 @@ const Card = ({ title, value, icon, theme }) => (
         fontWeight: theme.weight,
         color: theme.colors.text,
       }}
+      numberOfLines={2}
     >
       {value}
     </Text>
@@ -35,68 +36,79 @@ const Badge = ({ label }) => (
   </View>
 );
 
-// ✅ summary 문자열 파싱: "- 역: 물레역\n- 문 방향: 왼쪽\n- 환승: 없음\n- 기타: 없음"
-function parseSummary(summaryText) {
-  const parsed = {
+function extractLatestInfo(sessionResults) {
+  const defaults = {
     station: '인식 대기 중',
     door: '정보 없음',
-    transfers: '정보 없음',
+    transfers: [],
     extra: '정보 없음',
   };
 
-  if (!summaryText || typeof summaryText !== 'string') {
-    return parsed;
+  if (
+    !sessionResults ||
+    !Array.isArray(sessionResults.timeline) ||
+    sessionResults.timeline.length === 0
+  ) {
+    return defaults;
   }
 
-  const lines = summaryText.split('\n');
+  const timeline = sessionResults.timeline;
 
-  lines.forEach((rawLine) => {
-    if (!rawLine) return;
-    // 앞의 "- " 같은 불릿 제거
-    const line = rawLine.replace(/^[-•]\s*/, '').trim();
+  // 🔥 announcement_id만 체크
+  let latest = timeline[0];
+  let latestId = Number(latest.announcement_id) || 0;
 
-    if (line.startsWith('역:')) {
-      parsed.station = line.replace('역:', '').trim();
-    } else if (line.startsWith('문 방향:')) {
-      parsed.door = line.replace('문 방향:', '').trim();
-    } else if (line.startsWith('환승:')) {
-      parsed.transfers = line.replace('환승:', '').trim();
-    } else if (line.startsWith('기타:')) {
-      parsed.extra = line.replace('기타:', '').trim();
+  for (const item of timeline) {
+    const currentId = Number(item.announcement_id) || 0;
+    if (currentId > latestId) {
+      latest = item;
+      latestId = currentId;
     }
-  });
+  }
 
-  return parsed;
+  const info = latest.info || {};
+  const station = info.station || defaults.station;
+  const door = info.door || defaults.door;
+  const transfers = Array.isArray(info.transfers)
+    ? info.transfers
+    : [];
+
+  const warnings = Array.isArray(info.warnings)
+    ? info.warnings
+    : [];
+  const extra =
+    warnings.length > 0 ? warnings.join(', ') : '없음';
+
+  return { station, door, transfers, extra };
 }
 
 export default function CoreInfo() {
   const { theme } = useSettings();
   const { sessionResults } = useSession();
 
-  // 👉 결과 조회에서 온 summary 사용
-  const summaryText = sessionResults?.summary ?? '';
-  const { station, door, transfers, extra } = parseSummary(summaryText);
+  // 🔥 최신 방송 info만 추출
+  const { station, door, transfers, extra } =
+    extractLatestInfo(sessionResults);
 
-  // 환승 배지 처리
+  // 환승 표시 처리
   let transferBadges = [];
-  if (
-    !transfers ||
-    transfers === '없음' ||
-    transfers === '정보 없음'
-  ) {
+  if (!transfers || transfers.length === 0) {
     transferBadges = ['환승 없음'];
   } else {
-    // "2호선, 신분당선" / "2호선 신분당선" 등 단순 분리
     transferBadges = transfers
-      .split(/[,\s]+/)
-      .map((s) => s.trim())
+      .map((s) => String(s).trim())
       .filter(Boolean);
   }
 
   return (
     <View style={{ gap: Math.round(12 * theme.scale) }}>
-      {/* 현재 역 / 기타 정보(다음 역 카드 자리에 기타 정보) */}
-      <View style={{ flexDirection: 'row', gap: Math.round(12 * theme.scale) }}>
+      {/* 현재 역 / 기타 정보 */}
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: Math.round(12 * theme.scale),
+        }}
+      >
         <Card
           title="현재 역"
           value={station}
@@ -111,10 +123,18 @@ export default function CoreInfo() {
         />
       </View>
 
-      {/* 환승 노선 / 출입문 */}
-      <View style={{ flexDirection: 'row', gap: Math.round(12 * theme.scale) }}>
+      {/* 환승 / 출입문 */}
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: Math.round(12 * theme.scale),
+        }}
+      >
         <View
-          style={[styles.card, { flex: 1, backgroundColor: theme.colors.card }]}
+          style={[
+            styles.card,
+            { flex: 1, backgroundColor: theme.colors.card },
+          ]}
         >
           <View style={styles.cardHeader}>
             <Image
