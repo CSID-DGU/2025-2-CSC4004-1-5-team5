@@ -90,12 +90,12 @@ async function createNewSession(previousSessionId = null) {
 }
 
 export function SessionProvider({ children }) {
-  const [sessionId, setSessionId] = useState(null);        // 현재 사용 중인 세션
+  const [sessionId, setSessionId] = useState(null);         // 현재 사용 중인 세션
   const [lastSessionId, setLastSessionId] = useState(null); // 직전에 종료된 세션 (결과 조회용)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // ✅ 추가: 마지막으로 조회된 세션 결과 (CoreInfo 등에서 사용)
+  // 마지막으로 조회된 세션 결과 (CoreInfo 등에서 사용)
   const [sessionResults, setSessionResults] = useState(null);
 
   // 앱 시작 시: 이전 세션 정리 후 새 세션 생성
@@ -180,7 +180,7 @@ export function SessionProvider({ children }) {
   };
 
   /**
-   * ✅ 오디오 청크 업로드 (/audio/)
+   * 오디오 청크 업로드 (/audio/)
    * - fileUri: expo-audio로 녹음된 파일 URI
    * - durationSec: 선택, 초 단위 길이 (10초 청크면 10, 모르면 null)
    */
@@ -232,12 +232,43 @@ export function SessionProvider({ children }) {
   );
 
   /**
-   * ✅ 세션 결과 조회 (/session/{id}/results/)
+   * 세션 상태 조회 (/session/{id}/status/)
+   * - targetSessionId가 있으면 해당 세션 기준
+   * - 없으면 lastSessionId → sessionId 순으로 사용
+   */
+  const fetchSessionStatus = useCallback(
+    async (targetSessionId = null) => {
+      const effectiveId = targetSessionId ?? lastSessionId ?? sessionId;
+
+      if (!effectiveId) {
+        console.log("[Session] 상태 조회할 세션 ID 없음");
+        return null;
+      }
+
+      const url = `/session/${effectiveId}/status/`;
+      console.log("[Session] 상태 조회:", url);
+
+      try {
+        const res = await api.get(url);
+        console.log("[Session] 상태 조회 완료:", res.data);
+        // 예: { session_id: "1", status: "RECORDING" | "COMPLETE", ... }
+        return res.data;
+      } catch (e) {
+        console.error(
+          "[Session] 상태 조회 실패:",
+          e?.response?.data ?? e.message
+        );
+        return null;
+      }
+    },
+    [sessionId, lastSessionId]
+  );
+
+  /**
+   * 세션 결과 조회 (/session/{id}/results/)
    * - targetId가 있으면 해당 세션 ID로 조회
    * - 없으면 lastSessionId → sessionId 순으로 사용
-   * * [수정 내역]
-   * 에러 발생 시 throw 하지 않고 null을 리턴하여,
-   * 호출부(녹음 종료 로직)가 멈추지 않고 다음 단계(세션 초기화)로 진행되도록 함.
+   * - 에러 발생 시 throw 하지 않고 null을 리턴
    */
   const fetchSessionResults = useCallback(
     async (targetSessionId = null) => {
@@ -259,13 +290,11 @@ export function SessionProvider({ children }) {
           JSON.stringify(res.data, null, 2)
         );
 
-        // ✅ CoreInfo 등에서 사용할 수 있도록 상태에 저장
+        // CoreInfo 등에서 사용할 수 있도록 상태에 저장
         setSessionResults(res.data);
 
         return res.data;
       } catch (e) {
-        // 🔥 [중요] 여기서 에러를 다시 throw하면 녹음 종료 로직 전체가 멈춥니다.
-        // 에러를 로그만 남기고 null을 반환하여 흐름을 살립니다.
         console.error(
           "[Session] 결과 조회 실패 (프로세스 계속 진행):",
           e?.response?.data ?? e.message
@@ -278,14 +307,15 @@ export function SessionProvider({ children }) {
 
   const value = {
     sessionId,
-    lastSessionId,   // 🔹 직전 세션 ID (결과 조회용)
+    lastSessionId,     // 직전 세션 ID (결과 조회용)
     loading,
     error,
     resetSession,
     uploadAudioChunk,
     fetchSessionResults,
+    fetchSessionStatus, // ✅ 추가 노출
 
-    // ✅ CoreInfo에서 사용
+    // CoreInfo에서 사용
     sessionResults,
   };
 
