@@ -22,7 +22,8 @@
 ---
 
 ## ⚙️ 시스템 아키텍처
-<img width="2524" height="4072" alt="image" src="https://github.com/user-attachments/assets/4bdb4455-d8e5-45de-83f9-b5d8516e049e" />
+![제목 없음](https://github.com/user-attachments/assets/3723fc2d-5993-4b3d-b298-2f6219beb60e)
+
 > **구성 요약**
 > - Frontend: Expo, Android 기반 실시간 음성 녹음 및 SSE 이벤트 수신  
 > - Backend: Django + DRF + Celery + Redis  
@@ -31,7 +32,7 @@
 
 ---
 ## 🌐 전체 데이터 흐름 요약
-<img width="2876" height="4424" alt="image" src="https://github.com/user-attachments/assets/81a697e1-2593-4106-85ad-e129ca8c2a17" />
+![제목 없음 (1)](https://github.com/user-attachments/assets/ca8ded6c-9fd9-443f-a5bd-46f470a89794)
 
 
 ## ❤ 아키텍처의 장점
