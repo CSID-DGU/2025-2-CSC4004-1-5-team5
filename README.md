@@ -111,7 +111,7 @@ README.md                    # 프로젝트 개요 및 기술 문서
 | **하연희** | Server | Leader / API, AI 연동 설계 및 아키텍처 구축 |
 | **류재훈** | Frontend | Expo 기반 UI 개발
 | **정예경** | AI | DCCRNet 학습 및 음성 향상 파이프라인 구현
-| **박수민** | AI | Whisper 모델 파인튜닝 및 STT 분석
+| **백수민** | AI | Whisper 모델 파인튜닝 및 STT 분석
 | **최보광** | Documentation  | 보고서 및 기술 문서 작성, 자료 정리
 
 ---
