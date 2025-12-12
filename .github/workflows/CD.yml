@@ -1,0 +1,36 @@
+name: CD with Docker Compose
+
+on:
+  workflow_run:
+    workflows: ["CI with Docker"]
+    types: [completed]
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "🚀 Deploy started"
+
+            cd ${{ secrets.PROJECT_DIR }}
+
+            echo "🐳 Pulling latest image"
+            docker compose pull
+
+            echo "🔄 Restarting containers"
+            docker compose down
+            docker compose up -d
+
+            echo "🧹 Cleaning old images"
+            docker image prune -f
+
+            echo "🎉 Deploy completed!"

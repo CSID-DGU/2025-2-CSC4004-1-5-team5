@@ -1,0 +1,66 @@
+version: "3.9"
+
+volumes:
+  whisper_cache:
+  db_data:
+
+services:
+  web:
+    build: .
+    container_name: django_web
+    command: gunicorn project.wsgi:application \
+        --bind 0.0.0.0:8000 \
+        --worker-class gevent \
+        --workers 1 \
+        --timeout 300
+
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    volumes:
+      # 소스 코드 전체 마운트
+      - .:/app
+      - whisper_cache:/root/.cache/whisper
+    environment:
+      # 웹 container는 Whisper 모델을 절대 로드하지 않음
+      DJANGO_SETTINGS_MODULE: project.settings
+    mem_limit: 1g     # 웹은 메모리 1GB면 충분
+
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  worker:
+    build: .
+    container_name: celery_worker
+    command: celery -A project worker -l info --concurrency=1 --time-limit=600 --soft-time-limit=540
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - whisper_cache:/root/.cache/whisper
+    environment:
+      DJANGO_SETTINGS_MODULE: project.settings
+    mem_limit: 16g     # Whisper large 필수 메모리
+    restart: always
+
+  beat:
+    build: .
+    container_name: celery_beat
+    command: celery -A project beat -l info
+    depends_on:
+      - redis
+      - web
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - whisper_cache:/root/.cache/whisper
+    restart: always

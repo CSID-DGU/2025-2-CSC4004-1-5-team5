@@ -1,0 +1,62 @@
+from celery import shared_task
+from django.utils import timezone
+from apps.recordings.services.ai_client import call_ai_server
+from apps.recordings.models import AudioChunk
+from apps.broadcasts.models import Broadcast
+from apps.keywords.utils.detect import detect_keywords_in_chunk
+from apps.recordings.sse.publisher import push_event
+
+
+@shared_task
+def process_audio_chunk(chunk_id):
+    chunk = AudioChunk.objects.get(id=chunk_id)
+    session = chunk.session 
+
+    # --- 1) AI 서버 호출 ---
+    result = call_ai_server(chunk.file_path, chunk_id)
+    text = result.get("text", "")
+    confidence = result.get("confidence", 0)
+
+    # 무음이면 아무것도 안 함
+    if text.strip() == "":
+        chunk.status = "COMPLETE"
+        chunk.save()
+        
+        # 실시간 청크 개수 이벤트 보내기
+        update_session_chunk_count(session)
+        return {"text": "", "is_broadcast": False}
+
+    # --- 3) Broadcast 저장 ---
+    broadcast = Broadcast.objects.create(
+        session=session,
+        audio_chunk=chunk,
+        full_text=text,
+        confidence_avg=confidence,
+    )
+
+    # --- 4) 키워드 즉시 감지 + Broadcast에 저장 ---
+    detected = detect_keywords_in_chunk(session, text, broadcast)
+
+    # --- 5) chunk 완료 ---
+    chunk.status = "COMPLETE"
+    chunk.save()
+
+    # --- 6) SSE: 처리된 chunk 개수 push ---
+    update_session_chunk_count(session)
+
+    return {
+        "text": text,
+        "is_broadcast": True,
+        "detected_keywords": [kw.word for kw in detected] 
+    }
+
+
+
+def update_session_chunk_count(session):
+    done = session.chunks.filter(status="COMPLETE").count()
+
+    # SSE로 실시간 전달
+    push_event(session.id, {
+        "type": "chunk_count",
+        "done": done,
+    })
