@@ -6,18 +6,16 @@ import {
   ScrollView,
   Alert,
   Text,
-  ActivityIndicator,   // 👈 추가
+  ActivityIndicator,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
-// expo-audio용 API 임포트
 import {
   useAudioRecorder,
   RecordingPresets,
   setAudioModeAsync,
 } from 'expo-audio';
 
-// 컴포넌트 임포트
 import AnnouncementHeader from '../components/AnnouncementHeader';
 import RealtimeHistoryTabs from '../components/RealtimeHistoryTabs';
 import Keywords from '../components/Keywords';
@@ -45,26 +43,32 @@ export default function MainScreen() {
   const { theme, settings } = useSettings();
   const {
     sessionId,
-    lastSessionId,                 // 👈 사용
+    lastSessionId, // (유지) - 하지만 결과 조회 타겟으로는 더 이상 믿지 않음
     resetSession,
     loading: sessionLoading,
     uploadAudioChunk,
-    fetchSessionResults,           // 기존
-    fetchSessionStatus,            // 👈 상태 조회 추가
+    fetchSessionResults,
+    fetchSessionStatus,
   } = useSession();
 
   const [route, setRoute] = useState('home');
   const [tab, setTab] = useState('realtime');
   const [recording, setRecording] = useState(false);
   const [keywords, setKeywords] = useState([]);
-
-  const [resultsLoading, setResultsLoading] = useState(false); // 👈 로딩 상태 추가
+  const [resultsLoading, setResultsLoading] = useState(false);
 
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const intervalRef = useRef(null);
+
   const [elapsedMs, setElapsedMs] = useState(0);
   const elapsedRef = useRef(0);
   const recordingRef = useRef(false);
+
+  // ✅ [FIX] “방금 종료된 세션(결과 조회 대상)”을 state 말고 ref로 확정 저장
+  const endedSessionIdRef = useRef(null);
+
+  // ✅ (상태조회 알림 중복 방지용)
+  const alertedKeysRef = useRef(new Set());
 
   useEffect(() => {
     recordingRef.current = recording;
@@ -99,15 +103,58 @@ export default function MainScreen() {
     [settings.alertsEnabled],
   );
 
-  // SSE 구독
+  // SSE 구독 (그대로)
   useKeywordAlert(handleKeywordAlert);
+
+  // ✅ 상태조회 기반 키워드 알림 폴링 (녹음 중 + 현재 sessionId로)
+  useEffect(() => {
+    if (!recording) return;
+    if (!sessionId) return;
+    if (!settings.alertsEnabled) return;
+
+    let alive = true;
+    const INTERVAL = 2000;
+
+    const tick = async () => {
+      try {
+        const statusRes = await fetchSessionStatus(sessionId);
+        const alerts = Array.isArray(statusRes?.keyword_alerts)
+          ? statusRes.keyword_alerts
+          : [];
+
+        for (const a of alerts) {
+          const keyword = String(a?.keyword ?? '').trim();
+          if (!keyword) continue;
+
+          const key = `${a?.broadcast_id ?? ''}:${keyword}:${a?.detected_at ?? ''}`;
+          if (alertedKeysRef.current.has(key)) continue;
+          alertedKeysRef.current.add(key);
+
+          await handleKeywordAlert({ keyword });
+        }
+      } catch (e) {
+        console.log('[StatusPoll] 상태 조회 실패:', e?.message ?? e);
+      }
+    };
+
+    tick();
+    const t = setInterval(() => {
+      if (!alive) return;
+      tick();
+    }, INTERVAL);
+
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [recording, sessionId, settings.alertsEnabled, fetchSessionStatus, handleKeywordAlert]);
 
   // --------------------------------------------
   // ⭐ COMPLETE 될 때까지 상태 조회 + 결과 조회
   // --------------------------------------------
+  // ✅ [FIX] targetId를 “인자로” 받도록 변경 (state(lastSessionId)에 의존 X)
   const waitForCompleteAndShowResults = useCallback(
-    async () => {
-      const targetId = lastSessionId || sessionId;
+    async (targetId) => {
       if (!targetId) {
         Alert.alert('세션 오류', '조회할 세션 ID가 없습니다.');
         return;
@@ -115,9 +162,8 @@ export default function MainScreen() {
 
       setResultsLoading(true);
 
-      const INTERVAL = 2000; // 2초
+      const INTERVAL = 2000;
       const TIMEOUT = 30000; // 30초
-
       const startTime = Date.now();
 
       try {
@@ -126,7 +172,7 @@ export default function MainScreen() {
           console.log('[Status]', statusRes);
 
           if (statusRes?.status === 'COMPLETE') {
-            console.log('[Session] COMPLETE → 결과 조회');
+            console.log('[Session] COMPLETE → 결과 조회 (targetId=', targetId, ')');
             await fetchSessionResults(targetId);
             setTab('history');
             break;
@@ -143,12 +189,13 @@ export default function MainScreen() {
         setResultsLoading(false);
       }
     },
-    [lastSessionId, sessionId, fetchSessionStatus, fetchSessionResults],
+    [fetchSessionStatus, fetchSessionResults],
   );
 
   // --------------------------------------------
-  // 🔍 결과 보기 Alert → COMPLETE 될 때까지 기다림
+  // 🔍 결과 보기 Alert
   // --------------------------------------------
+  // ✅ [FIX] Alert에서 “ref에 저장된 endedSessionId”로 조회
   const askMoveToHistory = (title, message) => {
     Alert.alert(
       title,
@@ -157,7 +204,12 @@ export default function MainScreen() {
         { text: '계속하기', style: 'cancel' },
         {
           text: '결과 보기',
-          onPress: () => waitForCompleteAndShowResults(), // 👈 변경
+          onPress: () => {
+            const targetId =
+              endedSessionIdRef.current || lastSessionId || sessionId;
+            console.log('[UI] 결과 보기 클릭 → targetId =', targetId);
+            waitForCompleteAndShowResults(targetId);
+          },
         },
       ],
       { cancelable: true }
@@ -167,7 +219,6 @@ export default function MainScreen() {
   // --------------------------------------------
   // 녹음 제어
   // --------------------------------------------
-
   const startNewChunk = async () => {
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
     await audioRecorder.prepareToRecordAsync();
@@ -184,11 +235,18 @@ export default function MainScreen() {
     if (intervalRef.current) clearInterval(intervalRef.current);
     setRecording(false);
     recordingRef.current = false;
+
+    alertedKeysRef.current = new Set();
     askMoveToHistory('녹음 종료', '최대 녹음 시간에 도달했습니다.');
   };
 
   const toggleRecording = async () => {
     if (recording) {
+      // ✅ [FIX] “녹음 종료 시점의 sessionId”를 확정 저장
+      const endedId = sessionId;
+      endedSessionIdRef.current = endedId;
+      console.log('[Session] 녹음 종료 → endedSessionIdRef =', endedId);
+
       // 종료
       setRecording(false);
       recordingRef.current = false;
@@ -198,10 +256,13 @@ export default function MainScreen() {
       const uri = audioRecorder.uri;
       await uploadAudioChunk(uri, null);
 
+      // 세션 교체 (새 sessionId 생성)
       await resetSession(keywords);
 
       elapsedRef.current = 0;
       setElapsedMs(0);
+
+      alertedKeysRef.current = new Set();
 
       askMoveToHistory('녹음 종료', '지금까지 녹음된 결과를 확인하시겠습니까?');
       return;
@@ -212,6 +273,11 @@ export default function MainScreen() {
       Alert.alert('세션 준비 중', '잠시 후 다시 시도해주세요.');
       return;
     }
+
+    // ✅ 새 녹음 시작 시: 이전 종료 세션 타겟 초기화
+    endedSessionIdRef.current = null;
+
+    alertedKeysRef.current = new Set();
 
     setRecording(true);
     recordingRef.current = true;
@@ -240,13 +306,8 @@ export default function MainScreen() {
     return <SettingsScreen onClose={() => setRoute('home')} />;
   }
 
-  // --------------------------------------------
-  // 화면 렌더링
-  // --------------------------------------------
-
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.bg }]}>
-
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -278,9 +339,6 @@ export default function MainScreen() {
         disabled={sessionLoading && !recording}
       />
 
-      {/* ------------------------------------------
-          🔥 COMPLETE 대기 중 로딩 오버레이
-      ------------------------------------------- */}
       {resultsLoading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" />
@@ -289,18 +347,13 @@ export default function MainScreen() {
           </Text>
         </View>
       )}
-
     </View>
   );
 }
 
-// --------------------------------------------
-// 스타일
-// --------------------------------------------
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: {},
-
   loadingOverlay: {
     position: 'absolute',
     left: 0,
