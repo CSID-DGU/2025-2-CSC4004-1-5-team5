@@ -31,7 +31,8 @@
 
 ---
 ## 🌐 전체 데이터 흐름 요약
-<img width="3432" height="1237" alt="image" src="https://github.com/user-attachments/assets/56a791e0-40a6-497b-b6a6-d21c43365e96" />
+<img width="2876" height="4424" alt="image" src="https://github.com/user-attachments/assets/81a697e1-2593-4106-85ad-e129ca8c2a17" />
+
 
 ## ❤ 아키텍처의 장점
 ### 성능 측면
